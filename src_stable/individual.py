@@ -1,3 +1,4 @@
+#%%
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,10 +21,10 @@ class Individual(nn.Module):
         #   j是另一种索引方法：从第一个输入节点开始计算。
         # connectivity[j, i] 表示第i个节点的输入是否来自第j个节点
         self.connectivity = nn.Parameter(torch.zeros(self.num_nodes, self.num_middle_result_nodes,
-                                        dtype=torch.float32), requires_grad=False)
+                                        dtype=torch.int8), requires_grad=False)
         # node_existence[i] 表示第i个节点是否存在。
         self.node_existence = nn.Parameter(torch.zeros(self.num_middle_result_nodes, 
-                                                       dtype=torch.float32), requires_grad=False)
+                                                       dtype=torch.int8), requires_grad=False)
         self.node_existence[-self.output_dim:] = 1 # 输出节点必须存在
         # 3. 要求导的参数。对BP而言他们是变量。
         # weight[j, i] 表示第i个节点的输入是第j个节点的输出
@@ -49,3 +50,17 @@ class Individual(nn.Module):
             # 5. 加到middle_results中
             results[:, self.input_dim+i] = res
         return results[:, -self.output_dim:]
+    
+    
+#%%
+# if __name__ == "__main__":
+import torch.nn.init
+indi = Individual(2, 3, 2)
+indi.forward(torch.tensor([[1, 2], 
+                        [3, 4]]))
+#%%
+indi.connectivity[:, :] = 1
+nn.init.uniform_(indi.weight, -1, 1)
+indi.forward(torch.tensor([[1, 2], 
+                        [3, 4]]))
+# %%
