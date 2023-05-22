@@ -1,0 +1,6 @@
+[submodule "ref/Neutrino42_EPNet"]
+	path = ref/Neutrino42_EPNet
+	url = https://github.com/Neutrino42/Advanced_AI_evolving_ANN.git
+[submodule "ref/Assignment1"]
+	path = ref/Assignment1
+	url = https://github.com/2catycm/Student-Involution-Algorithms.git
