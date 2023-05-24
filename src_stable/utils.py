@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
+# import torch.optim as optim
 import torch.utils.data
 
 import numpy as np
@@ -60,13 +60,15 @@ class EarlyStopper(object):
         self.patience_counter = 0
         self.best_score = -torch.inf
         self.best_epoch = -1
+        self.best_state_dict = None
 
-    def is_continuable(self, epoch_i, score):
+    def is_continuable(self, epoch_i, score, state_dict=None):
         if score <= self.best_score+self.min_delta:
             # 没有改进
             if not self.cumulative_delta and score > self.best_score:
                 # 有微小的改进，于是更新best_score，这次改进也算你。
                 self.best_score = score
+                self.best_state_dict = state_dict
             self.patience_counter += 1
             if self.patience_counter >= self.patience:
                 return False
@@ -74,6 +76,7 @@ class EarlyStopper(object):
         else:
             # 有所改进
             self.best_score = score
+            self.best_state_dict = state_dict
             self.best_epoch = epoch_i
             self.patience_counter = 0
             return True

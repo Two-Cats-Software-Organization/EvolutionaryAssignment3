@@ -12,6 +12,7 @@ import numpy as np
 import sklearn.metrics as metrics
 from sklearnex import patch_sklearn
 patch_sklearn()
+import math
 
 
 class Individual(nn.Module):
@@ -45,28 +46,53 @@ class Individual(nn.Module):
         self.bias = nn.Parameter(torch.zeros(self.num_middle_result_nodes))
         # 激活函数
         self.activation = nn.Sigmoid()
+        self.reset_parameters()
+        
+    def reset_parameters(self) -> None:
+        self.connectivity = nn.Parameter(
+            torch.nn.init.uniform_(torch.zeros_like(self.connectivity)
+                                   .to(torch.float32), 0, 2).to(torch.int8)
+        , requires_grad=False)
+        self.node_existence = nn.Parameter(
+            torch.nn.init.uniform_(torch.zeros_like(self.node_existence)
+                                   .to(torch.float32), 0, 2).to(torch.int8)
+        , requires_grad=False)
+        self.node_existence[-self.output_dim:] = 1
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            torch.nn.init.uniform_(self.bias, -bound, bound)
+        
 
     def forward(self, x):
         # x: [batch_size, input_dim]
-        results = torch.empty(x.shape[0], self.num_nodes, device=x.device)
-        results[:, :self.input_dim] = x  # 输入节点的输出就是输入
+        # results = [torch.empty(self.num_nodes, device=x.device) for _ in range(x.shape[0])]
+        results = []
+        results += list(x.T.to(torch.float32))  # 输入节点的输出就是输入re
         effective_weight = self.connectivity * self.weight
         for i in range(self.num_middle_result_nodes):
             # 1. effective_weight * 前面所有节点的输出
-            res = results[:, :self.input_dim +
-                          i] @ effective_weight[:self.input_dim+i, i]
+            # previous_signals = results[:, :self.input_dim +
+            #               i]
+            previous_signals = torch.vstack(results[:self.input_dim+i]).T
+            connections_weights = effective_weight[:self.input_dim+i, i]
+            # res = previous_signals @ connections_weights
+            res = torch.matmul(previous_signals, connections_weights)
             # 2. 激活
+            # res = self.activation(res.clone())
             res = self.activation(res)
             # 3. 加上bias
             res = res + self.bias[i]
             # 4. 乘以node_existence
             res = res * self.node_existence[i]
             # 5. 加到middle_results中
-            results[:, self.input_dim+i] = res
-        return results[:, -self.output_dim:]
+            results.append(res)
+        return torch.vstack(results[-self.output_dim:]).T
 
-    @lru_cache
-    def fitness(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
+    # @lru_cache
+    # def fitness(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
+    def fitness(self, X_val, y_val, metric=lambda a,b:-(metrics.log_loss(a, b)), use_proba=True):
         with torch.no_grad():
             self.eval()
             y_pred = gpu2numpy(self.forward(X_val))
@@ -79,7 +105,8 @@ class Individual(nn.Module):
 # Partial Training by BP
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
-               criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
+            #    criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
+               criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
         """Partial Training by BP
         Args:
             X_train (torch.Tensor): _description_
@@ -94,13 +121,14 @@ class Individual(nn.Module):
             Tuple[bool, np.ndarray]: 是否成功; 每一轮的fitness。
         """
         if optimizer is None:
-            optimizer = optim.Adam(self.parameters())
-        early_stopper = EarlyStopper(patience=epochs//10)
+            optimizer = optim.AdamW(self.parameters(), lr=3e-4)
+        # early_stopper = EarlyStopper(patience=epochs//10)
+        early_stopper = EarlyStopper(patience=epochs//1)
         bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
         # train_losses = torch.zeros(epochs) # 记录每一轮的loss，用于画图
         val_fitness = np.zeros(epochs+1)  # 记录验证集的loss，如果没有下降，说明训练失败。
         val_fitness[0] = self.fitness(X_val, y_val, metric)  # 没有训练之前的loss
-        early_stopper.is_continuable(0, val_fitness[0])  # 初始化early_stopper
+        early_stopper.is_continuable(0, val_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
             y_train_pred = self.forward(X_train)
             trian_loss = criterion(y_train_pred.reshape(-1), y_train.to(torch.float32).reshape(-1))
@@ -110,35 +138,46 @@ class Individual(nn.Module):
 
             val_fitness[i] = self.fitness(X_val, y_val, metric)
             bar.set_postfix(trian_loss=trian_loss.item(),
-                            val_loss=val_fitness[i])
-            if not early_stopper.is_continuable(i, val_fitness[i]):
+                            val_fitness=val_fitness[i])
+            if not early_stopper.is_continuable(i, val_fitness[i], self.state_dict()):
                 bar.set_description("fit_bp: early stop")
                 break
+        # self.load_state_dict(early_stopper.best_state_dict)
         return early_stopper.best_score > val_fitness[0], val_fitness
 
 
 # %%
 # if __name__ == "__main__":
-indi = Individual(2, 1, 2)
+indi = Individual(2, 1, 200)
 indi.forward(torch.tensor([[1, 2],
                            [3, 4]]))
 # %%
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 indi.connectivity[:, :] = 1
+indi.node_existence[:] = 1
 nn.init.uniform_(indi.weight, -1, 1)
 a= indi.forward(torch.tensor([[1, 2],
                            [3, 4]]))
 a.mean().backward()
+#%%
+indi.bias.grad
 # %%
 from datasets import NParity
 from utils import dataset2numpy, numpy2gpu
 from sklearn.model_selection import train_test_split
 dataset = NParity(2) # XOR 问题
 X, Y = dataset2numpy(dataset)
-X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
+# X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
+X_train, X_val, y_train, y_val = X, X, Y, Y
 X_train, X_val, y_train, y_val = numpy2gpu(X_train, X_val, y_train, y_val)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 indi = indi.to(device)
 indi.fit_bp(X_train, y_train, X_val, y_val)
 
+# %%
+indi.fitness(X_val, y_val)
+indi.fitness(X_train, y_train, metrics.accuracy_score, False)
+
+# %%
+indi(X_train), y_train
 # %%
