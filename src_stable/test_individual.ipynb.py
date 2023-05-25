@@ -39,8 +39,8 @@ y=torch.randn((1, 1))
 input_names = ["input_0","input_1"]
 output_names = ["xor_output"]
 # torch.onnx.export(indi,(x,y),'indi.onnx',input_names=input_names,output_names=output_names,
-torch.onnx.export(indi,(x,),'indi.onnx',input_names=input_names,output_names=output_names,
-  dynamic_axes={'input_0':[0],'output_0':[0]} )
+# torch.onnx.export(indi,(x,),'indi.onnx',input_names=input_names,output_names=output_names,
+#   dynamic_axes={'input_0':[0],'output_0':[0]} )
 
 #%%
 from objprint import objprint
@@ -72,14 +72,19 @@ X, Y = dataset2numpy(dataset)
 # X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
 X_train, X_val, y_train, y_val = X, X, Y, Y
 X_train, X_val, y_train, y_val = numpy2gpu(X_train, X_val, y_train, y_val)
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 
 #%%
 indi.reset_parameters()
-indi
+list(indi.parameters())
 
 
 #%%
+indi = indi.to(device)
+indi.fit_sa(X_train, y_train, X_val, y_val, epochs_per_temperature=100,)
+#%%
+
 indi = indi.to(device)
 indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100, 
             optimizer=optim.Adam(indi.parameters(), lr=0.01))
@@ -92,8 +97,8 @@ indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100,
 indi.bias
 
 # %%
-indi.fitness(X_val, y_val)
-indi.fitness(X_train, y_train, metrics.accuracy_score, False)
+indi.fitness_sklearn(X_val, y_val)
+indi.fitness_sklearn(X_train, y_train, metrics.accuracy_score, False)
 
 # %%
 indi(X_train), y_train

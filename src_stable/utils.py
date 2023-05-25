@@ -23,12 +23,13 @@ def gpu2numpy(*tensors: torch.Tensor)->np.ndarray | Tuple[np.ndarray]:
 #             return tuple(t.detach().cpu().numpy() for t in tensors)
 #         case _:
 #             raise TypeError(f'Expected torch.Tensor or Collection[torch.Tensor], got {type(tensors)}')
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 def numpy2gpu(*arrays: np.ndarray, device=device)->torch.Tensor| Tuple[torch.Tensor]:
     assert len(arrays) > 0
     if len(arrays) == 1:
-        return torch.tensor(arrays, device=device)
-    return tuple(torch.tensor(a, device=device) for a in arrays)
+        return torch.tensor(arrays[0], device=device).to(torch.float32)
+    return tuple(torch.tensor(a, device=device).to(torch.float32) for a in arrays)
 #%%
 
 

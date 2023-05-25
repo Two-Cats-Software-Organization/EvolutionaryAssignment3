@@ -144,13 +144,13 @@ class Individual(nn.Module):
         optimizer = SA(func=objective, x0=x0,
                        T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
         best_x, best_y = optimizer.run()
+        objective(best_x) # 将状态设置为最佳状态
         final_fitness = self.fitness_torch(X_val, y_val, criterion)
         return initial_val_fitness < final_fitness, np.array(optimizer.best_y_history)
 
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
-               criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
-        #    criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
+               criterion: Callable = F.binary_cross_entropy) -> Tuple[bool, np.ndarray]:
         """Partial Training by BP
         Args:
             X_train (torch.Tensor): _description_
@@ -172,8 +172,8 @@ class Individual(nn.Module):
         bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
         # train_losses = torch.zeros(epochs) # 记录每一轮的loss，用于画图
         val_fitness = np.zeros(epochs+1)  # 记录验证集的loss，如果没有下降，说明训练失败。
-        val_fitness[0] = self.fitness_sklearn(
-            X_val, y_val, metric)  # 没有训练之前的loss
+        val_fitness[0] = self.fitness_torch(
+            X_val, y_val, criterion)  # 没有训练之前的loss
         early_stopper.is_continuable(
             0, val_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
@@ -185,13 +185,13 @@ class Individual(nn.Module):
             optimizer.step()
             optimizer.zero_grad()
 
-            val_fitness[i] = self.fitness_sklearn(X_val, y_val, metric)
+            val_fitness[i] = self.fitness_torch(X_val, y_val, criterion)
             bar.set_postfix(trian_loss=trian_loss.item(),
                             val_fitness=val_fitness[i])
             if not early_stopper.is_continuable(i, val_fitness[i], self.state_dict()):
                 bar.set_description("fit_bp: early stop")
                 break
-        # self.load_state_dict(early_stopper.best_state_dict)
+        self.load_state_dict(early_stopper.best_state_dict)
         return early_stopper.best_score > val_fitness[0], val_fitness
 
 
