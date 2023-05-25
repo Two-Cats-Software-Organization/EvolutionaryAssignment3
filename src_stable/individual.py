@@ -113,7 +113,6 @@ class Individual(nn.Module):
             self.train()
             return res  # Python特性：先会执行finally, 再执行return
 
-        
     def fitness_torch(self, X_val, y_val, metric=F.binary_cross_entropy):
         with torch.no_grad():
             self.eval()
@@ -121,32 +120,9 @@ class Individual(nn.Module):
             # print(y_pred.max(), y_pred.min())
             # pytorch 风格，y_pred在前
             res = -metric(y_pred.reshape(-1),
-                         y_val.to(torch.float32).reshape(-1))
+                          y_val.to(torch.float32).reshape(-1))
             self.train()
             return res.item()  # Python特性：先会执行finally, 再执行return
-
-    def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
-               epochs_per_temperature: int = 100, max_temperature=5,
-               criterion: Callable = F.binary_cross_entropy) -> Tuple[bool, np.ndarray]:
-        # old_state_dict = self.state_dict() # 在外面做保存，里面训练了就是训练了
-        initial_val_fitness = self.fitness_torch(X_val, y_val, criterion)
-        dims = self.weight.numel() + self.bias.numel()
-        x0 = gpu2numpy(torch.hstack(
-            (self.weight.flatten(), self.bias.flatten())))
-
-        def objective(x: np.ndarray):
-            q = numpy2gpu(x, device=self.weight.device)
-            self.weight = nn.Parameter(
-                q[:self.weight.numel()].reshape(self.weight.shape))
-            self.bias = nn.Parameter(
-                q[self.weight.numel():].reshape(self.bias.shape))
-            return -self.fitness_torch(X_train, y_train, criterion) # SA 是求最小值的，所以要加负号
-        optimizer = SA(func=objective, x0=x0,
-                       T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
-        best_x, best_y = optimizer.run()
-        objective(best_x) # 将状态设置为最佳状态
-        final_fitness = self.fitness_torch(X_val, y_val, criterion)
-        return initial_val_fitness < final_fitness, np.array(optimizer.best_y_history)
 
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
@@ -164,18 +140,22 @@ class Individual(nn.Module):
         Returns:
             Tuple[bool, np.ndarray]: 是否成功; 每一轮的fitness。
         """
+        initial_val_fitness = self.fitness_torch(X_val, y_val, criterion)
         if optimizer is None:
             optimizer = optim.AdamW(self.parameters(), lr=3e-4)
         # early_stopper = EarlyStopper(patience=epochs//10)
         early_stopper = EarlyStopper(patience=epochs//1)
         # early_stopper = EarlyStopper(patience=epochs//2)
         bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
-        # train_losses = torch.zeros(epochs) # 记录每一轮的loss，用于画图
-        val_fitness = np.zeros(epochs+1)  # 记录验证集的loss，如果没有下降，说明训练失败。
-        val_fitness[0] = self.fitness_torch(
-            X_val, y_val, criterion)  # 没有训练之前的loss
-        early_stopper.is_continuable(
-            0, val_fitness[0], self.state_dict())  # 初始化early_stopper
+        # val_fitness # 记录验证集的loss，如果没有下降，说明训练失败。
+        train_fitness = np.zeros(epochs+1)
+        train_fitness[0] = self.fitness_torch(
+            X_train, y_train, criterion)  # 没有训练之前的loss
+        # 针对训练集的stopper。只是把best state留下来
+
+        # 一开始state不要留，让外面而不是里面恢复
+        # early_stopper.is_continuable(
+        #     0, train_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
             y_train_pred = self.forward(X_train)
             # pytorch 风格，y_pred在前
@@ -185,14 +165,53 @@ class Individual(nn.Module):
             optimizer.step()
             optimizer.zero_grad()
 
-            val_fitness[i] = self.fitness_torch(X_val, y_val, criterion)
+            train_fitness[i] = self.fitness_torch(X_train, y_train, criterion)
             bar.set_postfix(trian_loss=trian_loss.item(),
-                            val_fitness=val_fitness[i])
-            if not early_stopper.is_continuable(i, val_fitness[i], self.state_dict()):
+                            val_fitness=train_fitness[i])
+            if not early_stopper.is_continuable(i, train_fitness[i], self.state_dict()):
                 bar.set_description("fit_bp: early stop")
                 break
         self.load_state_dict(early_stopper.best_state_dict)
-        return early_stopper.best_score > val_fitness[0], val_fitness
+        final_fitness = self.fitness_torch(X_val, y_val, criterion)
+        self.current_fitness = final_fitness
+        # return early_stopper.best_score > train_fitness[0], train_fitness
+        return initial_val_fitness < final_fitness, train_fitness
 
+    def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
+               epochs_per_temperature: int = 100, max_temperature=5,
+               criterion: Callable = F.binary_cross_entropy) -> Tuple[bool, np.ndarray]:
+        # old_state_dict = self.state_dict() # 在外面做保存，里面训练了就是训练了
+        initial_val_fitness = self.fitness_torch(X_val, y_val, criterion)
+        dims = self.weight.numel() + self.bias.numel()
+        x0 = gpu2numpy(torch.hstack(
+            (self.weight.flatten(), self.bias.flatten())))
+
+        def objective(x: np.ndarray):
+            q = numpy2gpu(x, device=self.weight.device)
+            self.weight = nn.Parameter(
+                q[:self.weight.numel()].reshape(self.weight.shape))
+            self.bias = nn.Parameter(
+                q[self.weight.numel():].reshape(self.bias.shape))
+            # SA 是求最小值的，所以要加负号
+            return -self.fitness_torch(X_train, y_train, criterion)
+        optimizer = SA(func=objective, x0=x0,
+                       T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
+        best_x, best_y = optimizer.run()
+        objective(best_x)  # 将状态设置为最佳状态
+        final_fitness = self.fitness_torch(X_val, y_val, criterion)
+        self.current_fitness = final_fitness
+        return initial_val_fitness < final_fitness, np.array(optimizer.best_y_history)
+
+    def delete_node(self):
+        pass
+
+    def delete_connection(self):
+        pass
+
+    def add_node(self):
+        pass
+
+    def add_connection(self):
+        pass
 
 # %%

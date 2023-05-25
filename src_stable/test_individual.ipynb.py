@@ -79,15 +79,18 @@ device = torch.device('cpu')
 indi.reset_parameters()
 list(indi.parameters())
 
-
+#%%
+indi.fitness_torch(X_train, y_train)
 #%%
 indi = indi.to(device)
-indi.fit_sa(X_train, y_train, X_val, y_val, epochs_per_temperature=100,)
+indi.fit_sa(X_train, y_train, X_val, y_val, epochs_per_temperature=100,
+            max_temperature=100)
 #%%
 
 indi = indi.to(device)
 indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100, 
-            optimizer=optim.Adam(indi.parameters(), lr=0.01))
+            optimizer=optim.Adam(indi.parameters(), lr=0.5))
+            # optimizer=optim.Adam(indi.parameters(), lr=0.01))
             # optimizer=optim.Adam(indi.parameters(), lr=0.5))
             # optimizer=optim.Adam(indi.parameters(), lr=0.01))
 # indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100, 
