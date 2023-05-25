@@ -1,7 +1,10 @@
 # %%
+from loss import prechelt_mse_loss
+from sko.SA import SA
+import math
 import random
 from typing import Callable, List, Tuple
-from utils import EarlyStopper, gpu2numpy
+from utils import EarlyStopper, gpu2numpy, numpy2gpu
 import torch.nn.init
 from functools import lru_cache
 import tqdm
@@ -13,9 +16,6 @@ import numpy as np
 import sklearn.metrics as metrics
 from sklearnex import patch_sklearn
 patch_sklearn()
-import math
-
-from sko.SA import SA
 
 
 class Individual(nn.Module):
@@ -55,26 +55,26 @@ class Individual(nn.Module):
         # 激活函数
         self.activation = nn.Sigmoid()
         self.reset_parameters(connection_density)
-        
+
     def reset_parameters(self, connection_density=0.75) -> None:
-        self.connectivity += torch.nn.init.uniform_(torch.zeros_like(self.connectivity)
-                                   .to(torch.float32), 0, 1)<connection_density
-        
-        
-        initial_nodes = random.choices(range(self.max_hidden_dim), k=random.randint(self.min_hidden_dim, self.max_hidden_dim))
+        self.connectivity = nn.Parameter(torch.nn.init.uniform_(torch.zeros_like(self.connectivity)
+                                                                .to(torch.float32), 0, 1) < connection_density,
+                                         requires_grad=False)
+
+        initial_nodes = random.choices(range(self.max_hidden_dim), k=random.randint(
+            self.min_hidden_dim, self.max_hidden_dim))
         self.node_existence[initial_nodes] = 1
         self.node_existence[-self.output_dim:] = 1
         for i in range(self.num_middle_result_nodes):
             fan_in = i+self.input_dim
             v_squared = 1/(fan_in*(0.25**2)*(1+0.5**2))
             torch.nn.init.normal_(self.weight[:, i], 0, math.sqrt(v_squared))
-        
+
         # torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         # if self.bias is not None:
         #     fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
         #     bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
         #     torch.nn.init.uniform_(self.bias, -bound, bound)
-        
 
     def forward(self, x):
         # x: [batch_size, input_dim]
@@ -102,36 +102,53 @@ class Individual(nn.Module):
         return torch.vstack(results[-self.output_dim:]).T
 
     # @lru_cache
-    def fitness(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
-    # def fitness(self, X_val, y_val, metric=lambda a,b:-(metrics.log_loss(a, b)), use_proba=True):
+    def fitness_sklearn(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
+        # def fitness(self, X_val, y_val, metric=lambda a,b:-(metrics.log_loss(a, b)), use_proba=True):
         with torch.no_grad():
             self.eval()
             y_pred = gpu2numpy(self.forward(X_val))
             if not use_proba:
                 y_pred = (y_pred > 0.5).astype(int)
-            res = metric(gpu2numpy(y_val), y_pred) # sklearn 风格，true在前
+            res = metric(gpu2numpy(y_val), y_pred)  # sklearn 风格，true在前
             self.train()
             return res  # Python特性：先会执行finally, 再执行return
-        
-    
 
-    # def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
-    #             epochs_per_temperature: int = 100, ):
-    #     old_state_dict = self.state_dict()
-    #     dims = self.weight.numel() + self.bias.numel()
-    #     x0 = gpu2numpy(torch.hstack((self.weight.flatten(), self.bias.flatten())))
-    #     def objective(Vars):
-    #         pass
-    #     optimizer = SA(func=objective, x0=x0
-    #                    L=epochs_per_temperature
-    #                    )
-    #     best_x, best_y = sa.run()
-        
-        
+    def fitness_torch(self, X_val, y_val, metric=F.binary_cross_entropy):
+        with torch.no_grad():
+            self.eval()
+            y_pred = self.forward(X_val)
+            # pytorch 风格，y_pred在前
+            res = -metric(y_pred.reshape(-1),
+                         y_val.to(torch.float32).reshape(-1))
+            self.train()
+            return res.item()  # Python特性：先会执行finally, 再执行return
+
+    def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
+               epochs_per_temperature: int = 100, max_temperature=5,
+               criterion: Callable = F.binary_cross_entropy) -> Tuple[bool, np.ndarray]:
+        # old_state_dict = self.state_dict() # 在外面做保存，里面训练了就是训练了
+        initial_val_fitness = self.fitness_torch(X_val, y_val, criterion)
+        dims = self.weight.numel() + self.bias.numel()
+        x0 = gpu2numpy(torch.hstack(
+            (self.weight.flatten(), self.bias.flatten())))
+
+        def objective(x: np.ndarray):
+            q = numpy2gpu(x, device=self.weight.device)
+            self.weight = nn.Parameter(
+                q[:self.weight.numel()].reshape(self.weight.shape))
+            self.bias = nn.Parameter(
+                q[self.weight.numel():].reshape(self.bias.shape))
+            return self.fitness_torch(X_train, y_train, criterion)
+        optimizer = SA(func=objective, x0=x0,
+                       T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
+        best_x, best_y = optimizer.run()
+        final_fitness = self.fitness_torch(X_val, y_val, criterion)
+        return initial_val_fitness < final_fitness, np.array(optimizer.best_y_history)
+
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
                criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
-            #    criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
+        #    criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
         """Partial Training by BP
         Args:
             X_train (torch.Tensor): _description_
@@ -153,16 +170,20 @@ class Individual(nn.Module):
         bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
         # train_losses = torch.zeros(epochs) # 记录每一轮的loss，用于画图
         val_fitness = np.zeros(epochs+1)  # 记录验证集的loss，如果没有下降，说明训练失败。
-        val_fitness[0] = self.fitness(X_val, y_val, metric)  # 没有训练之前的loss
-        early_stopper.is_continuable(0, val_fitness[0], self.state_dict())  # 初始化early_stopper
+        val_fitness[0] = self.fitness_sklearn(
+            X_val, y_val, metric)  # 没有训练之前的loss
+        early_stopper.is_continuable(
+            0, val_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
             y_train_pred = self.forward(X_train)
-            trian_loss = criterion(y_train_pred.reshape(-1), y_train.to(torch.float32).reshape(-1)) # pytorch 风格，y_pred在前
+            # pytorch 风格，y_pred在前
+            trian_loss = criterion(
+                y_train_pred.reshape(-1), y_train.to(torch.float32).reshape(-1))
             trian_loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
-            val_fitness[i] = self.fitness(X_val, y_val, metric)
+            val_fitness[i] = self.fitness_sklearn(X_val, y_val, metric)
             bar.set_postfix(trian_loss=trian_loss.item(),
                             val_fitness=val_fitness[i])
             if not early_stopper.is_continuable(i, val_fitness[i], self.state_dict()):
