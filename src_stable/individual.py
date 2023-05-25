@@ -90,11 +90,11 @@ class Individual(nn.Module):
             connections_weights = effective_weight[:self.input_dim+i, i]
             # res = previous_signals @ connections_weights
             res = torch.matmul(previous_signals, connections_weights)
-            # 2. 激活
+            # 2. 加上bias
+            res = res + self.bias[i]
+            # 3. 激活
             # res = self.activation(res.clone())
             res = self.activation(res)
-            # 3. 加上bias
-            res = res + self.bias[i]
             # 4. 乘以node_existence
             res = res * self.node_existence[i]
             # 5. 加到middle_results中
@@ -113,10 +113,12 @@ class Individual(nn.Module):
             self.train()
             return res  # Python特性：先会执行finally, 再执行return
 
+        
     def fitness_torch(self, X_val, y_val, metric=F.binary_cross_entropy):
         with torch.no_grad():
             self.eval()
             y_pred = self.forward(X_val)
+            # print(y_pred.max(), y_pred.min())
             # pytorch 风格，y_pred在前
             res = -metric(y_pred.reshape(-1),
                          y_val.to(torch.float32).reshape(-1))
@@ -138,7 +140,7 @@ class Individual(nn.Module):
                 q[:self.weight.numel()].reshape(self.weight.shape))
             self.bias = nn.Parameter(
                 q[self.weight.numel():].reshape(self.bias.shape))
-            return self.fitness_torch(X_train, y_train, criterion)
+            return -self.fitness_torch(X_train, y_train, criterion) # SA 是求最小值的，所以要加负号
         optimizer = SA(func=objective, x0=x0,
                        T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
         best_x, best_y = optimizer.run()
