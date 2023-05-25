@@ -1,4 +1,5 @@
 # %%
+import random
 from typing import Callable, List, Tuple
 from utils import EarlyStopper, gpu2numpy
 import torch.nn.init
@@ -14,16 +15,23 @@ from sklearnex import patch_sklearn
 patch_sklearn()
 import math
 
+from sko.SA import SA
+
 
 class Individual(nn.Module):
     """Some Information about Individual"""
 
-    def __init__(self, input_dim, output_dim, max_hidden_dim):
+    def __init__(self, input_dim, output_dim, max_hidden_dim, min_hidden_dim=2, connection_density=0.75):
         super(Individual, self).__init__()
+        assert max_hidden_dim >= min_hidden_dim
+        # 0. 演化标记
+        self.previous_train_success = False
+        self.current_fitness = 0
         # 1. 形状计算
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.max_hidden_dim = max_hidden_dim
+        self.min_hidden_dim = min_hidden_dim
         self.num_nodes = input_dim+output_dim+max_hidden_dim
         self.num_middle_result_nodes = output_dim+max_hidden_dim
         # 2. 不求导的参数。对BP而言他们是常数
@@ -46,23 +54,26 @@ class Individual(nn.Module):
         self.bias = nn.Parameter(torch.zeros(self.num_middle_result_nodes))
         # 激活函数
         self.activation = nn.Sigmoid()
-        self.reset_parameters()
+        self.reset_parameters(connection_density)
         
-    def reset_parameters(self) -> None:
-        self.connectivity = nn.Parameter(
-            torch.nn.init.uniform_(torch.zeros_like(self.connectivity)
-                                   .to(torch.float32), 0, 2).to(torch.int8)
-        , requires_grad=False)
-        self.node_existence = nn.Parameter(
-            torch.nn.init.uniform_(torch.zeros_like(self.node_existence)
-                                   .to(torch.float32), 0, 2).to(torch.int8)
-        , requires_grad=False)
+    def reset_parameters(self, connection_density=0.75) -> None:
+        self.connectivity += torch.nn.init.uniform_(torch.zeros_like(self.connectivity)
+                                   .to(torch.float32), 0, 1)<connection_density
+        
+        
+        initial_nodes = random.choices(range(self.max_hidden_dim), k=random.randint(self.min_hidden_dim, self.max_hidden_dim))
+        self.node_existence[initial_nodes] = 1
         self.node_existence[-self.output_dim:] = 1
-        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-            torch.nn.init.uniform_(self.bias, -bound, bound)
+        for i in range(self.num_middle_result_nodes):
+            fan_in = i+self.input_dim
+            v_squared = 1/(fan_in*(0.25**2)*(1+0.5**2))
+            torch.nn.init.normal_(self.weight[:, i], 0, math.sqrt(v_squared))
+        
+        # torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        # if self.bias is not None:
+        #     fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+        #     bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+        #     torch.nn.init.uniform_(self.bias, -bound, bound)
         
 
     def forward(self, x):
@@ -91,22 +102,36 @@ class Individual(nn.Module):
         return torch.vstack(results[-self.output_dim:]).T
 
     # @lru_cache
-    # def fitness(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
-    def fitness(self, X_val, y_val, metric=lambda a,b:-(metrics.log_loss(a, b)), use_proba=True):
+    def fitness(self, X_val, y_val, metric=metrics.accuracy_score, use_proba=False):
+    # def fitness(self, X_val, y_val, metric=lambda a,b:-(metrics.log_loss(a, b)), use_proba=True):
         with torch.no_grad():
             self.eval()
             y_pred = gpu2numpy(self.forward(X_val))
             if not use_proba:
                 y_pred = (y_pred > 0.5).astype(int)
-            res = metric(gpu2numpy(y_val), y_pred)
+            res = metric(gpu2numpy(y_val), y_pred) # sklearn 风格，true在前
             self.train()
             return res  # Python特性：先会执行finally, 再执行return
+        
+    
 
-# Partial Training by BP
+    # def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
+    #             epochs_per_temperature: int = 100, ):
+    #     old_state_dict = self.state_dict()
+    #     dims = self.weight.numel() + self.bias.numel()
+    #     x0 = gpu2numpy(torch.hstack((self.weight.flatten(), self.bias.flatten())))
+    #     def objective(Vars):
+    #         pass
+    #     optimizer = SA(func=objective, x0=x0
+    #                    L=epochs_per_temperature
+    #                    )
+    #     best_x, best_y = sa.run()
+        
+        
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
-            #    criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
-               criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
+               criterion: Callable = F.binary_cross_entropy, metric: Callable = metrics.accuracy_score) -> Tuple[bool, np.ndarray]:
+            #    criterion: Callable = F.binary_cross_entropy, metric: Callable = lambda a,b:-(metrics.log_loss(a, b))) -> Tuple[bool, np.ndarray]:
         """Partial Training by BP
         Args:
             X_train (torch.Tensor): _description_
@@ -124,6 +149,7 @@ class Individual(nn.Module):
             optimizer = optim.AdamW(self.parameters(), lr=3e-4)
         # early_stopper = EarlyStopper(patience=epochs//10)
         early_stopper = EarlyStopper(patience=epochs//1)
+        # early_stopper = EarlyStopper(patience=epochs//2)
         bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
         # train_losses = torch.zeros(epochs) # 记录每一轮的loss，用于画图
         val_fitness = np.zeros(epochs+1)  # 记录验证集的loss，如果没有下降，说明训练失败。
@@ -131,7 +157,7 @@ class Individual(nn.Module):
         early_stopper.is_continuable(0, val_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
             y_train_pred = self.forward(X_train)
-            trian_loss = criterion(y_train_pred.reshape(-1), y_train.to(torch.float32).reshape(-1))
+            trian_loss = criterion(y_train_pred.reshape(-1), y_train.to(torch.float32).reshape(-1)) # pytorch 风格，y_pred在前
             trian_loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -146,38 +172,4 @@ class Individual(nn.Module):
         return early_stopper.best_score > val_fitness[0], val_fitness
 
 
-# %%
-# if __name__ == "__main__":
-indi = Individual(2, 1, 200)
-indi.forward(torch.tensor([[1, 2],
-                           [3, 4]]))
-# %%
-# torch.autograd.set_detect_anomaly(True)
-indi.connectivity[:, :] = 1
-indi.node_existence[:] = 1
-nn.init.uniform_(indi.weight, -1, 1)
-a= indi.forward(torch.tensor([[1, 2],
-                           [3, 4]]))
-a.mean().backward()
-#%%
-indi.bias.grad
-# %%
-from datasets import NParity
-from utils import dataset2numpy, numpy2gpu
-from sklearn.model_selection import train_test_split
-dataset = NParity(2) # XOR 问题
-X, Y = dataset2numpy(dataset)
-# X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
-X_train, X_val, y_train, y_val = X, X, Y, Y
-X_train, X_val, y_train, y_val = numpy2gpu(X_train, X_val, y_train, y_val)
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-indi = indi.to(device)
-indi.fit_bp(X_train, y_train, X_val, y_val)
-
-# %%
-indi.fitness(X_val, y_val)
-indi.fitness(X_train, y_train, metrics.accuracy_score, False)
-
-# %%
-indi(X_train), y_train
 # %%

@@ -9,7 +9,7 @@ import numpy as np
 from typing import Callable, List, Tuple, Iterable
 
 
-def gpu2numpy(*tensors: List[torch.Tensor])->np.ndarray | Tuple[np.ndarray]:
+def gpu2numpy(*tensors: torch.Tensor)->np.ndarray | Tuple[np.ndarray]:
     assert len(tensors) > 0
     if len(tensors) == 1:
         return tensors[0].detach().cpu().numpy()
@@ -24,22 +24,11 @@ def gpu2numpy(*tensors: List[torch.Tensor])->np.ndarray | Tuple[np.ndarray]:
 #         case _:
 #             raise TypeError(f'Expected torch.Tensor or Collection[torch.Tensor], got {type(tensors)}')
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-def numpy2gpu(*arrays: np.ndarray, device=device)->torch.Tensor:
+def numpy2gpu(*arrays: np.ndarray, device=device)->torch.Tensor| Tuple[torch.Tensor]:
     assert len(arrays) > 0
     if len(arrays) == 1:
         return torch.tensor(arrays, device=device)
     return tuple(torch.tensor(a, device=device) for a in arrays)
-#%%
-t = torch.tensor([1, 2, 3], dtype=torch.float32)
-# list(gpu2numpy(t)) # 无病detach也是可以的
-gpu2numpy(t) # 无病detach也是可以的
-gpu2numpy(t, t) # 无病detach也是可以的
-t, t = numpy2gpu(np.array([1, 2, 3]), np.array([1, 2, 3]))
-t
-# t = torch.tensor([1, 2, 3], dtype=torch.float32, device='cuda')
-# gpu2numpy(t)
-# t = torch.tensor([1, 2, 3], dtype=torch.float32, device='cuda', requires_grad=True)
-# gpu2numpy(t)
 #%%
 
 
