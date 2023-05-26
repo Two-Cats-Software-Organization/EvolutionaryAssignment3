@@ -1,4 +1,5 @@
 # %%
+import bisect
 import sklearn.metrics as metrics
 from losses import prechelt_mse_loss
 from sko.SA import SA
@@ -277,7 +278,7 @@ class Individual(nn.Module):
         """
         self.epoches_since_structured = 0 # 修改了网络结构，所以数据归零
         hidden_nodes = self.hidden_nodes()
-        if hidden_nodes==0:
+        if hidden_nodes<=0:
             return 0
         q = random.randint(1, min(max_mutated_hidden_nodes, hidden_nodes))
         nodes = [i.item() for i in self.node_existence[:-self.output_dim].nonzero()]
@@ -289,9 +290,39 @@ class Individual(nn.Module):
         self.epoches_since_structured = 0
         pass
 
-    def add_node(self, max_mutated_hidden_nodes=2):
-        self.epoches_since_structured = 0
-        pass
+    def add_node(self, max_mutated_hidden_nodes=2, alpha=0.25)->int:
+        self.epoches_since_structured = 0        
+        available_new_nodes = [i.item() for i in (1-self.node_existence[:-self.output_dim]).nonzero()]
+        if len(available_new_nodes)<=0:
+            return 0
+        q = random.randint(1, min(max_mutated_hidden_nodes, len(available_new_nodes)))
+        # nodes = [i.item() for i in self.node_existence[:-self.output_dim].nonzero()]
+        nodes = [i.item() for i in self.node_existence[:].nonzero()]
+        offsprings = random.sample(available_new_nodes, q)
+        for offspring in offsprings:
+            insert_place = max(0, bisect.bisect(nodes, offspring)-1) # 优先选择左边的存在节点，如果不行再选择右边。
+            parent = nodes[insert_place]
+            self.cell_division(offspring, parent, alpha=alpha)
+        return q
+    def cell_division(self, offspring, parent, alpha=0.25):
+        # 输入的都是i索引。
+        # offspring还不存在，parent存在。
+        bigger_one = max(offspring, parent)
+        smaller_one = min(offspring, parent)
+        with torch.no_grad():
+            self.node_existence[offspring] = 1
+            self.weight[offspring, parent] = 0
+            # 1. 前面的权重；不需要考虑 i>=j 因为是冗余的参数而已。
+            self.weight[:smaller_one, offspring] = self.weight[:smaller_one, parent]
+            self.bias[offspring] = self.bias[parent] 
+            # 2. 后面的权重
+            for i in range(bigger_one+1, self.num_middle_result_nodes):
+                if self.node_existence[i]==1:
+                    self.weight[offspring, i] = self.weight[parent, i] * (1+alpha)
+                    self.weight[parent, i] = self.weight[parent, i] * (-alpha)
+         
+        
+        
 
     def add_connection(self, max_mutated_connections=3):
         self.epoches_since_structured = 0

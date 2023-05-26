@@ -28,3 +28,6 @@ list(indi.parameters())
 success = indi.delete_node(2)
 list(indi.parameters()), success
 # %%
+success = indi.add_node(2)
+list(indi.parameters()), success
+# %%

@@ -1,4 +1,14 @@
 #%%
+import bisect
+array = [1, 2, 3, 4, 5]
+# bisect.bisect(array, 3)
+# bisect.bisect(array, 5)
+# bisect.bisect(array, 2)
+# bisect.bisect(array, 1)
+bisect.bisect(array, 0.5)
+bisect.bisect(array, 1.5)
+# bisect.bisect(array, 5.5)
+#%%
 import tqdm
 epochs = 1000
 bar = tqdm.tqdm(range(epochs))
