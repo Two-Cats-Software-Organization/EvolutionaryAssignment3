@@ -1,4 +1,5 @@
 #%%
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -94,4 +95,13 @@ def dataset2numpy(dataset: torch.utils.data.Dataset) -> Tuple[np.ndarray, np.nda
 
 
 #%%
+import random
+def rank_selection(max_rank, k=1):
+    ranks = list(range(max_rank))
+    rank_sum = (1+max_rank)*max_rank//2
+    weights = [(rank+1)/rank_sum for rank in ranks]
+    return random.choices(ranks, weights, k=k)
 
+rank_selection(20)
+
+# %%

@@ -1,5 +1,5 @@
 # %%
-from loss import prechelt_mse_loss
+from losses import prechelt_mse_loss
 from sko.SA import SA
 import math
 import random
@@ -174,8 +174,9 @@ class Individual(nn.Module):
         self.load_state_dict(early_stopper.best_state_dict)
         final_fitness = self.fitness_torch(X_val, y_val, criterion)
         self.current_fitness = final_fitness
+        self.previous_train_success = initial_val_fitness < final_fitness
         # return early_stopper.best_score > train_fitness[0], train_fitness
-        return initial_val_fitness < final_fitness, train_fitness
+        return self.previous_train_success, train_fitness
 
     def fit_sa(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs_per_temperature: int = 100, max_temperature=5,
@@ -200,18 +201,19 @@ class Individual(nn.Module):
         objective(best_x)  # 将状态设置为最佳状态
         final_fitness = self.fitness_torch(X_val, y_val, criterion)
         self.current_fitness = final_fitness
-        return initial_val_fitness < final_fitness, np.array(optimizer.best_y_history)
+        self.previous_train_success  = initial_val_fitness < final_fitness
+        return self.previous_train_success, np.array(optimizer.best_y_history)
 
-    def delete_node(self):
+    def delete_node(self, max_mutated_hidden_nodes=2):
         pass
 
-    def delete_connection(self):
+    def delete_connection(self, max_mutated_connections=3):
         pass
 
-    def add_node(self):
+    def add_node(self, max_mutated_hidden_nodes=2):
         pass
 
-    def add_connection(self):
+    def add_connection(self, max_mutated_connections=3):
         pass
 
 # %%
