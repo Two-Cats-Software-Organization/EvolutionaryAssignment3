@@ -98,12 +98,14 @@ class EPNet:
                 self.situation_counts[2] += 1
                 continue
             # 3. connection deletion
-            worst_individual.delete_connection(self.max_mutated_connections)
+            worst_individual.delete_connection(self.X_val, self.y_val, prechelt_mse_loss,
+                                               max_mutated_connections=self.max_mutated_connections)
             if self.try_bp_or_rollback(worst_individual, backup_best_individual) : 
                 self.situation_counts[3] += 1
                 continue
             # 4. connection/node addition
-            worst_individual.add_connection(self.max_mutated_connections)
+            worst_individual.add_connection(self.X_val, self.y_val, prechelt_mse_loss,
+                                            self.max_mutated_connections)
             self.fit_bp(worst_individual)
             fitness1 = worst_individual.current_fitness
             checkpoint1 = deepcopy(worst_individual)

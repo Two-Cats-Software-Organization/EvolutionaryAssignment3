@@ -137,12 +137,13 @@ class Individual(nn.Module):
         #     bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
         #     torch.nn.init.uniform_(self.bias, -bound, bound)
 
-    def forward(self, x):
+    def forward(self, x, effective_weight=None):
         # x: [batch_size, input_dim]
         # results = [torch.empty(self.num_nodes, device=x.device) for _ in range(x.shape[0])]
         results = []
         results += list(x.T.to(torch.float32))  # 输入节点的输出就是输入re
-        effective_weight = self.connectivity * self.weight
+        if effective_weight is None:
+            effective_weight = self.connectivity * self.weight
         for i in range(self.num_middle_result_nodes):
             # 1. effective_weight * 前面所有节点的输出
             # previous_signals = results[:, :self.input_dim +
@@ -286,9 +287,48 @@ class Individual(nn.Module):
         self.node_existence[deletes] = 0
         return q
 
-    def delete_connection(self, max_mutated_connections=3):
+    def connection_importance(self, X:torch.Tensor, y:torch.Tensor, criterion:Callable=F.binary_cross_entropy)->torch.Tensor:
+        """计算每条连接的重要性，用于删除连接。
+        Args:
+            X (torch.Tensor): 训练集的输入
+            y (torch.Tensor): 训练集的输出
+            criterion (Callable, optional): 损失函数. Defaults to F.binary_cross_entropy.
+        Returns:
+            torch.Tensor: 每条连接的重要性
+        """
         self.epoches_since_structured = 0
-        pass
+        y_pred = self.forward(X)
+        grads = torch.empty((len(y_pred), *self.weight.shape))
+        for i in range(len(y_pred)):
+            self.zero_grad()
+            loss = criterion((y_pred[i]).reshape(-1), y[i].to(torch.float32).reshape(-1))
+            loss.backward(retain_graph=True)
+            grads[i] = self.weight.grad      
+        effective_weights = self.weight*self.connectivity.triu(
+            diagonal=-self.input_dim+1)*torch.unsqueeze(self.node_existence, 0)
+        importance = torch.unsqueeze(effective_weights, 0)+grads
+        importance = torch.mean(importance, dim=0)/torch.std(importance, dim=0)/math.sqrt(len(y_pred))
+        return importance
+        
+    def delete_connection(self, X:torch.Tensor, y:torch.Tensor, criterion:Callable=F.binary_cross_entropy, 
+                           max_mutated_connections=3):
+        self.epoches_since_structured = 0
+        connections = self.connections()
+        if connections<=0:
+            return 0
+        q = random.randint(1, min(max_mutated_connections, connections))
+        importance = 1/self.connection_importance(X, y, criterion)
+        importance = torch.nan_to_num(importance, nan=0, posinf=10, neginf=-10).reshape(-1)
+        importance = importance/torch.sum(importance)
+        if torch.isnan(importance).sum()!=0: return 0
+        importance = [i.item() for i in importance]
+        deletes = random.choices(range(len(importance)), weights=importance, k=q)
+        deletes = list({(i//self.connectivity.shape[1], i%self.connectivity.shape[1]) for i in deletes})
+        for delete in deletes:
+            self.connectivity[delete] = 0
+        # self.connectivity[deletes] = 0
+        return q
+        
 
     def add_node(self, max_mutated_hidden_nodes=2, alpha=0.25)->int:
         self.epoches_since_structured = 0        
@@ -322,19 +362,37 @@ class Individual(nn.Module):
                     self.weight[parent, i] = self.weight[parent, i] * (-alpha)
          
         
-        
 
-    def add_connection(self, max_mutated_connections=3):
+    def add_connection(self, X:torch.Tensor, y:torch.Tensor, criterion:Callable=F.binary_cross_entropy, 
+                       max_mutated_connections=3):
+        # TODO 在连接没有恢复之前不可能求导。
         self.epoches_since_structured = 0
-        pass
-
+        # 1. 确定q
+        possible_connections = torch.ones_like(
+            self.connectivity).triu(
+                diagonal=-self.input_dim+1)*torch.unsqueeze(self.node_existence, 0)
+        current_connectivity = self.real_connectivity()
+        resumable_connections = possible_connections & (~current_connectivity)
+        num_resumable_connections = int(resumable_connections.sum().item())
+        if num_resumable_connections<=0:
+            return 0
+        q = random.randint(1, min(max_mutated_connections, num_resumable_connections))
+        # 2. 确定增加
+        resumable_connections = [index for index in resumable_connections.nonzero()]
+        adds = random.sample(resumable_connections, k=q)
+        for add in adds:
+            self.connectivity[add] = 1
+        return q
 
     # 一些指标
     def hidden_nodes(self):
         return int(self.node_existence[:-self.output_dim].sum().item())
 
+    def real_connectivity(self):
+        return (self.connectivity.triu(diagonal=-self.input_dim+1)
+                    *torch.unsqueeze(self.node_existence, 0))
     def connections(self):
-        return int(self.connectivity.triu(diagonal=-self.input_dim+1).sum().item())
+        return int(self.real_connectivity().sum().item())
 
     def metrics(self):
         return dict(

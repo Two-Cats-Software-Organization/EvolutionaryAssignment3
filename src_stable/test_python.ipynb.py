@@ -9,6 +9,11 @@ bisect.bisect(array, 0.5)
 bisect.bisect(array, 1.5)
 # bisect.bisect(array, 5.5)
 #%%
+import torch
+a = torch.arange(10).reshape(2, 5)
+a.index(5)
+
+#%%
 import tqdm
 epochs = 1000
 bar = tqdm.tqdm(range(epochs))

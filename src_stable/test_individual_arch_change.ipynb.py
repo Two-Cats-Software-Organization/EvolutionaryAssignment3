@@ -31,3 +31,36 @@ list(indi.parameters()), success
 success = indi.add_node(2)
 list(indi.parameters()), success
 # %%
+from datasets import NParity
+from utils import dataset2numpy, numpy2gpu
+from sklearn.model_selection import train_test_split
+dataset = NParity(2) # XOR 问题
+X, Y = dataset2numpy(dataset)
+# X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
+X_train, X_val, y_train, y_val = X, X, Y, Y
+X_train, X_val, y_train, y_val = numpy2gpu(X_train, X_val, y_train, y_val)
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
+
+# %%
+indi = indi.to(device)
+indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100)
+#%%
+indi.connections()
+# %%
+indi.connection_importance(X_val, y_val)
+#%%
+indi.delete_connection(X_val, y_val)
+
+#%%
+indi.add_connection(X_val, y_val)
+#%%
+# indi.connectivity
+# indi.connectivity[[torch.tensor([2, 3]), 
+#                    torch.tensor([1, 0]), 
+#                     torch.tensor([0, 0])]] = 1
+# %%
+effective_weights = indi.weight*indi.connectivity.triu(
+    diagonal=-indi.input_dim+1)*torch.unsqueeze(indi.node_existence, 0)
+effective_weights
+# %%
