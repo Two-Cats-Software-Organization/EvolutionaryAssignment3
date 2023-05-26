@@ -1,4 +1,6 @@
 import random
+
+from matplotlib import pyplot as plt
 from individual import Individual
 from losses import prechelt_mse_loss
 import tqdm
@@ -13,23 +15,38 @@ class EPNet:
                  max_mutated_connections=3,
                  population_size=20, start_epochs=100, training_epochs=100
                  ,criterion=prechelt_mse_loss) -> None:
+        # 数据集
         self.X_train = X_train
         self.X_val = X_val
         self.y_train = y_train
         self.y_val = y_val
+        # 算法参数
         self.training_epochs = training_epochs
         self.max_mutated_hidden_nodes = max_mutated_hidden_nodes
         self.max_mutated_connections = max_mutated_connections
         self.criterion = criterion
-
+        self.start_epochs = start_epochs
+        # 统计指标
+        self.situation_names = ['bp', 'sa', 'delete_node', 'delete_connection', 'add_node', 'add_connection']
+        self.situation_counts = [0 for _ in range(len(self.situation_names))]
+        # 构建种群
         self.population = [Individual(input_dim, output_dim, max_hidden_dim,
                                       min_hidden_dim, connection_density)
                            for _ in range(population_size)]
+        
+    def reset_parameters(self):
+        # 初始化训练
         for individual in self.population:
+            individual.reset_parameters()
             individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                              epochs=start_epochs, criterion=prechelt_mse_loss)
-
-    
+                              epochs=self.start_epochs, criterion=self.criterion)
+    def draw_metrics(self, path="test/epnet_metrics.png", type="pie"):
+        if type=="pie":
+            plt.pie(self.situation_counts, labels=self.situation_names, autopct='%1.1f%%')
+        else:
+            plt.figure(figsize=(10, 5))
+            plt.bar(self.situation_names, self.situation_counts)
+        plt.savefig(path)
     
     def try_bp_or_rollback(self, pioneer:Individual, checkpoint)->bool:
         pioneer.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
@@ -62,17 +79,25 @@ class EPNet:
             if best_individual.previous_train_success:
                 best_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                                        epochs=self.training_epochs, criterion=self.criterion)
+                self.situation_counts[0] += 1
                 continue  # 因为上一轮成功，不管这一轮是否成功，直接继续训练替代父代。这一轮的不成功是下一次在说。
+            # 尝试SA跳出局部最优解
             backup_best_individual = deepcopy(best_individual)
-            if self.try_sa_or_rollback(worst_individual, backup_best_individual) : continue # 尝试SA跳出局部最优解
+            if self.try_sa_or_rollback(worst_individual, backup_best_individual) : 
+                self.situation_counts[1] += 1
+                continue 
             # 接下来变异的是 worst_individual
             worst_individual.__dict__.update(backup_best_individual.__dict__)                
             # 2. hidden node deletion
             worst_individual.delete_node(self.max_mutated_hidden_nodes)
-            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : continue
+            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : 
+                self.situation_counts[2] += 1
+                continue
             # 3. connection deletion
             worst_individual.delete_connection(self.max_mutated_connections)
-            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : continue
+            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : 
+                self.situation_counts[3] += 1
+                continue
             # 4. connection/node addition
             worst_individual.add_connection(self.max_mutated_connections)
             worst_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
@@ -87,5 +112,7 @@ class EPNet:
             fitness2 = worst_individual.current_fitness
             if fitness1>fitness2:
                 worst_individual.__dict__.update(checkpoint1.__dict__)
-            
+                self.situation_counts[4] += 1
+            else:
+                self.situation_counts[5] += 1
             

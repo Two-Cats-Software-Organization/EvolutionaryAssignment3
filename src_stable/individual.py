@@ -1,4 +1,5 @@
 # %%
+import sklearn.metrics as metrics
 from losses import prechelt_mse_loss
 from sko.SA import SA
 import math
@@ -16,7 +17,7 @@ import numpy as np
 import networkx as nx
 from sklearnex import patch_sklearn
 patch_sklearn()
-import sklearn.metrics as metrics
+
 
 class Individual(nn.Module):
     """Some Information about Individual"""
@@ -27,6 +28,7 @@ class Individual(nn.Module):
         # 0. 演化标记
         self.previous_train_success = False
         self.current_fitness = 0
+        self.epoches_since_structured = 0
         # 1. 形状计算
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -55,56 +57,59 @@ class Individual(nn.Module):
         # 激活函数
         self.activation = nn.Sigmoid()
         self.reset_parameters(connection_density)
-        
+
+    def savefig(self, path="test/indi.dot"):
+        g = self.to_networkx()
+        nx.drawing.nx_pydot.write_dot(g,path) 
     def to_networkx(self):
         G = nx.DiGraph()
         # nodes. 统一使用j索引；命名时按照节点的类型，重新计数，称为k索引
-        G.add_node(-1, label="1", color="#2ecc71", fontcolor="#2ecc71", 
-                   shape="circle", style="bold") # bias
-        nodes = [(j, {"color":"#2ecc71", "style":"wedged", "fontcolor":"#2ecc71", "shape":"circle", 
-                               "label":f"x{j}"}) for j in range(self.input_dim)]
+        G.add_node(-1, label="1", color="#2ecc71", fontcolor="#2ecc71",
+                   shape="circle", style="bold")  # bias
+        nodes = [(j, {"color": "#2ecc71", "style": "wedged", "fontcolor": "#2ecc71", "shape": "circle",
+                               "label": f"x{j}"}) for j in range(self.input_dim)]
         k = 0
         for i in list(self.node_existence[:-self.output_dim].nonzero()):
             j = i.item()+self.input_dim
-            nodes.append((j, {"shape":"circle", "style":"wedged",
-                       "color":"#3498db", "fontcolor":"#3498db", 
-                        "label":f"z{k}", "bias":str(self.bias[i].item())}))
-            k+=1
+            nodes.append((j, {"shape": "circle", "style": "wedged",
+                              "color": "#3498db", "fontcolor": "#3498db",
+                              "label": f"z{k}", "bias": str(self.bias[i].item())}))
+            k += 1
         for k in range(self.output_dim):
             i = self.max_hidden_dim+k
             j = self.input_dim+i
-            nodes.append((j, {"shape":"circle", "style":"wedged",
-                   "color":"#e74c3c", "fontcolor":"#e74c3c", 
-                              "label":f"y{k}", "bias":str(self.bias[i].item())}))
+            nodes.append((j, {"shape": "circle", "style": "wedged",
+                              "color": "#e74c3c", "fontcolor": "#e74c3c",
+                              "label": f"y{k}", "bias": str(self.bias[i].item())}))
         G.add_nodes_from(nodes)
         # edges. 基于j索引，寻找有效连接，把weight绑上去。
         # edges = []
         for i in range(self.connectivity.shape[1]):
             for j in range(self.connectivity.shape[0]):
-                if j>=i+self.input_dim: 
+                if j >= i+self.input_dim:
                     break
                 if self.connectivity[j][i] and self.node_existence[i]:
-                    if j>=self.input_dim and self.node_existence[j-self.input_dim]==False:
+                    if j >= self.input_dim and self.node_existence[j-self.input_dim] == False:
                         continue
                     # edges.append((j, i+self.input_dim, self.weight[j, i].item()))
                     weight = self.weight[j, i].item()
-                    G.add_edge(j, i+self.input_dim, 
+                    G.add_edge(j, i+self.input_dim,
                                weight=weight,
-                               label = f"{weight:.2f}",
-                               fontcolor="steelblue" if i<self.max_hidden_dim else "goldenrod"
+                               label=f"{weight:.2f}",
+                               fontcolor="steelblue" if i < self.max_hidden_dim else "goldenrod"
                                )
         # bias
-        
+
         for i in list(self.node_existence.nonzero()):
             i = i.item()
             j = i+self.input_dim
-            bias = self.bias[i].item()  
-            G.add_edge(-1, j, 
+            bias = self.bias[i].item()
+            G.add_edge(-1, j,
                        bias=bias,
                        label=f"{bias:.2f}",
-                       fontcolor="steelblue" if i<self.max_hidden_dim else "goldenrod"
+                       fontcolor="steelblue" if i < self.max_hidden_dim else "goldenrod"
                        )
-            
+
         # G.add_weighted_edges_from(edges)
         return G
 
@@ -209,6 +214,7 @@ class Individual(nn.Module):
         # early_stopper.is_continuable(
         #     0, train_fitness[0], self.state_dict())  # 初始化early_stopper
         for i in bar:
+            self.epoches_since_structured += 1
             y_train_pred = self.forward(X_train)
             # pytorch 风格，y_pred在前
             trian_loss = criterion(
@@ -227,6 +233,7 @@ class Individual(nn.Module):
         final_fitness = self.fitness_torch(X_val, y_val, criterion)
         self.current_fitness = final_fitness
         self.previous_train_success = initial_val_fitness < final_fitness
+         
         # return early_stopper.best_score > train_fitness[0], train_fitness
         return self.previous_train_success, train_fitness
 
@@ -250,22 +257,43 @@ class Individual(nn.Module):
         optimizer = SA(func=objective, x0=x0,
                        T_max=max_temperature, T_min=1e-7, L=epochs_per_temperature,)
         best_x, best_y = optimizer.run()
+        self.epoches_since_structured += len(optimizer.best_y_history)
         objective(best_x)  # 将状态设置为最佳状态
         final_fitness = self.fitness_torch(X_val, y_val, criterion)
         self.current_fitness = final_fitness
-        self.previous_train_success  = initial_val_fitness < final_fitness
+        self.previous_train_success = initial_val_fitness < final_fitness
         return self.previous_train_success, np.array(optimizer.best_y_history)
 
     def delete_node(self, max_mutated_hidden_nodes=2):
+        self.epoches_since_structured = 0 # 修改了网络结构，所以数据归零
         pass
 
     def delete_connection(self, max_mutated_connections=3):
+        self.epoches_since_structured = 0
         pass
 
     def add_node(self, max_mutated_hidden_nodes=2):
+        self.epoches_since_structured = 0
         pass
 
     def add_connection(self, max_mutated_connections=3):
+        self.epoches_since_structured = 0
         pass
+
+
+    # 一些指标
+    def hidden_nodes(self):
+        return self.node_existence[:-self.output_dim].sum().item()
+
+    def connections(self):
+        return self.connectivity.triu(diagonal=-self.input_dim+1).sum().item()
+
+    def metrics(self):
+        return dict(
+            hidden_nodes=self.hidden_nodes(),
+            connections=self.connections(),
+            epoches_since_structured=self.epoches_since_structured,
+            fitness=self.current_fitness
+        )
 
 # %%

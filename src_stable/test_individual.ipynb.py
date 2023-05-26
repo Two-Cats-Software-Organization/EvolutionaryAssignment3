@@ -26,6 +26,13 @@ out = indi.forward(torch.tensor([[1, 2],
                            [3, 4]]))
 out
 #%%
+indi.connectivity[:indi.input_dim]
+indi.connectivity[indi.input_dim:]
+indi.connectivity[indi.input_dim:].tril()
+
+indi.connectivity.triu(diagonal=-indi.input_dim+1)
+indi.metrics()
+#%%
 
 # from torchviz import make_dot,make_dot_from_trace
 # graph=make_dot(out,params=dict(indi.named_parameters()),)
@@ -98,7 +105,10 @@ indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100,
 #%%
 # list(indi.parameters())
 indi.bias
-
+#%%
+indi.metrics()
+#%%
+indi.to_networkx()
 # %%
 indi.fitness_sklearn(X_val, y_val)
 indi.fitness_sklearn(X_train, y_train, metrics.accuracy_score, False)
