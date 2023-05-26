@@ -10,13 +10,18 @@ bar = tqdm.tqdm(range(epochs))
 #     print(f"World {i}")
 #%%
 import time
-for i in tqdm.tqdm(range(epochs), desc="外层", position=0, leave=False, colour='green'
+for i in tqdm.tqdm(range(epochs), desc="外层", position=0, leave=True, colour='green'
                 #    ncols=100
                    ):
     for j in tqdm.tqdm(range(10), desc="内层", position=1, leave=False, colour='yellow'
                     #    ncols=100
                        ):
-        time.sleep(0.1)
+        # time.sleep(0.1)
+        pass
+for j in tqdm.tqdm(range(10), desc="内层", position=1, leave=False, colour='yellow'):
+    time.sleep(0.5)
+for j in tqdm.tqdm(range(10), desc="内层", position=1, leave=False, colour='yellow'):
+    time.sleep(0.5)
 exit()
 #%%
 import torch

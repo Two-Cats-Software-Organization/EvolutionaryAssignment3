@@ -183,7 +183,8 @@ class Individual(nn.Module):
 
     def fit_bp(self, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor,
                epochs: int = 100, optimizer: optim.Optimizer | None = None,
-               criterion: Callable = F.binary_cross_entropy) -> Tuple[bool, np.ndarray]:
+               criterion: Callable = F.binary_cross_entropy, 
+               position=0, leave=True) -> Tuple[bool, np.ndarray]:
         """Partial Training by BP
         Args:
             X_train (torch.Tensor): _description_
@@ -203,7 +204,7 @@ class Individual(nn.Module):
         # early_stopper = EarlyStopper(patience=epochs//10)
         early_stopper = EarlyStopper(patience=epochs//1)
         # early_stopper = EarlyStopper(patience=epochs//2)
-        bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp")
+        bar = tqdm.tqdm(range(1, epochs+1), desc="fit_bp", position=position, leave=leave, colour='yellow')
         # val_fitness # 记录验证集的loss，如果没有下降，说明训练失败。
         train_fitness = np.zeros(epochs+1)
         train_fitness[0] = self.fitness_torch(

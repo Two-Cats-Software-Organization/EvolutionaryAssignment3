@@ -36,10 +36,10 @@ class EPNet:
         
     def reset_parameters(self):
         # 初始化训练
-        for individual in self.population:
+        bar = tqdm.tqdm(self.population, desc="Intial BP Trainig", position=0, leave=True, colour='green')
+        for individual in bar:
             individual.reset_parameters()
-            individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                              epochs=self.start_epochs, criterion=self.criterion)
+            self.fit_bp(individual, epochs=self.start_epochs)
     def draw_metrics(self, path="test/epnet_metrics.png", type="pie"):
         if type=="pie":
             plt.pie(self.situation_counts, labels=self.situation_names, autopct='%1.1f%%')
@@ -49,8 +49,7 @@ class EPNet:
         plt.savefig(path)
     
     def try_bp_or_rollback(self, pioneer:Individual, checkpoint)->bool:
-        pioneer.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                                       epochs=self.training_epochs, criterion=self.criterion)
+        self.fit_bp(pioneer)
         if pioneer.previous_train_success:
             return True # 成功，worst被best的offspring替代
         pioneer.__dict__.update(checkpoint.__dict__) # 丢弃子代；worst继续从parent开始改进。
@@ -62,6 +61,12 @@ class EPNet:
             return True # 成功，worst被best的offspring替代
         pioneer.__dict__.update(checkpoint.__dict__) # 丢弃子代；worst继续从parent开始改进。
         return False
+    def fit_bp(self, individual, epochs=None):
+        if epochs is None:
+            epochs = self.training_epochs
+        individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
+                            epochs=epochs, criterion=self.criterion, 
+                              position=1, leave=False)
     # def run(self, train_loader, test_loader):
     def run(self, epochs=100,):
         bar = tqdm.tqdm(range(epochs), desc="EPNet", position=0, leave=False, colour='green')
@@ -77,8 +82,7 @@ class EPNet:
             bar.set_postfix(best_fitness=best_individual.current_fitness)
             # 1. Hybrid training mutation
             if best_individual.previous_train_success:
-                best_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                                       epochs=self.training_epochs, criterion=self.criterion)
+                self.fit_bp(best_individual)
                 self.situation_counts[0] += 1
                 continue  # 因为上一轮成功，不管这一轮是否成功，直接继续训练替代父代。这一轮的不成功是下一次在说。
             # 尝试SA跳出局部最优解
@@ -100,15 +104,13 @@ class EPNet:
                 continue
             # 4. connection/node addition
             worst_individual.add_connection(self.max_mutated_connections)
-            worst_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                                       epochs=self.training_epochs, criterion=self.criterion)
+            self.fit_bp(worst_individual)
             fitness1 = worst_individual.current_fitness
             checkpoint1 = deepcopy(worst_individual)
             # 退回backup_best_individual, 尝试添加node
             worst_individual.__dict__.update(backup_best_individual.__dict__) 
             worst_individual.add_node(self.max_mutated_hidden_nodes)
-            worst_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
-                                       epochs=self.training_epochs, criterion=self.criterion)
+            self.fit_bp(worst_individual)
             fitness2 = worst_individual.current_fitness
             if fitness1>fitness2:
                 worst_individual.__dict__.update(checkpoint1.__dict__)
