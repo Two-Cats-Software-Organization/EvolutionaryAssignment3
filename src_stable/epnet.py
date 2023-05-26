@@ -31,17 +31,23 @@ class EPNet:
 
     
     
-    def try_bp_or_rollback(self, pioneer:Individual)->bool:
-        old_state_dict = pioneer.state_dict()
+    def try_bp_or_rollback(self, pioneer:Individual, checkpoint)->bool:
         pioneer.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                                        epochs=self.training_epochs, criterion=self.criterion)
         if pioneer.previous_train_success:
             return True # 成功，worst被best的offspring替代
-        pioneer.load_state_dict(old_state_dict) # 丢弃子代；worst继续从parent开始改进。
+        pioneer.__dict__.update(checkpoint.__dict__) # 丢弃子代；worst继续从parent开始改进。
+        return False
+    def try_sa_or_rollback(self, pioneer:Individual, checkpoint)->bool:
+        pioneer.fit_sa(self.X_train, self.y_train, self.X_val, self.y_val,
+                                       epochs_per_temperature=self.training_epochs,max_temperature=5, criterion=self.criterion)
+        if pioneer.previous_train_success:
+            return True # 成功，worst被best的offspring替代
+        pioneer.__dict__.update(checkpoint.__dict__) # 丢弃子代；worst继续从parent开始改进。
         return False
     # def run(self, train_loader, test_loader):
     def run(self, epochs=100,):
-        bar = tqdm.tqdm(range(epochs))
+        bar = tqdm.tqdm(range(epochs), desc="EPNet", position=0, leave=True)
         for i in bar:
             # best_individual = max(
             #     self.population, key=lambda i: i.current_fitness)
@@ -51,43 +57,35 @@ class EPNet:
             worst_individual = self.population[0]
             best_individual = self.population[
                 rank_selection(len(self.population), k=1)[0]] # 随机选择一个最好的
+            bar.set_postfix(best_fitness=best_individual.current_fitness)
             # 1. Hybrid training mutation
             if best_individual.previous_train_success:
                 best_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                                        epochs=self.training_epochs, criterion=self.criterion)
                 continue  # 因为上一轮成功，不管这一轮是否成功，直接继续训练替代父代。这一轮的不成功是下一次在说。
-            
-            old_state_dict = best_individual.state_dict()
-            best_individual.fit_sa(self.X_train, self.y_train, self.X_val, self.y_val,
-                                    epochs_per_temperature=100, max_temperature=5, criterion=self.criterion
-                                    )
-            if best_individual.previous_train_success:
-                continue  # 成功的退火，替代父代。
-            best_individual.load_state_dict(
-                old_state_dict)  # 子代没用，保留parent。
-            # 接下来修改的是 worst_individual
-            # worst_state_dict = worst_individual.state_dict()
-            worst_individual.load_state_dict(best_individual.state_dict())                
+            backup_best_individual = deepcopy(best_individual)
+            if self.try_sa_or_rollback(worst_individual, backup_best_individual) : continue # 尝试SA跳出局部最优解
+            # 接下来变异的是 worst_individual
+            worst_individual.__dict__.update(backup_best_individual.__dict__)                
             # 2. hidden node deletion
             worst_individual.delete_node(self.max_mutated_hidden_nodes)
-            if self.try_bp_or_rollback(worst_individual) : continue
+            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : continue
             # 3. connection deletion
             worst_individual.delete_connection(self.max_mutated_connections)
-            if self.try_bp_or_rollback(worst_individual) : continue
+            if self.try_bp_or_rollback(worst_individual, backup_best_individual) : continue
             # 4. connection/node addition
             worst_individual.add_connection(self.max_mutated_connections)
             worst_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                                        epochs=self.training_epochs, criterion=self.criterion)
             fitness1 = worst_individual.current_fitness
-            state_dict1 = worst_individual.state_dict()
-            
-            worst_individual.load_state_dict(best_individual.state_dict())
+            checkpoint1 = deepcopy(worst_individual)
+            # 退回backup_best_individual, 尝试添加node
+            worst_individual.__dict__.update(backup_best_individual.__dict__) 
             worst_individual.add_node(self.max_mutated_hidden_nodes)
             worst_individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                                        epochs=self.training_epochs, criterion=self.criterion)
             fitness2 = worst_individual.current_fitness
-            
             if fitness1>fitness2:
-                worst_individual.load_state_dict(state_dict1)
+                worst_individual.__dict__.update(checkpoint1.__dict__)
             
             
