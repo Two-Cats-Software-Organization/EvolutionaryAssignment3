@@ -118,14 +118,17 @@ class Individual(nn.Module):
                                                                 .to(torch.float32), 0, 1) < connection_density,
                                          requires_grad=False)
 
-        initial_nodes = random.choices(range(self.max_hidden_dim), k=random.randint(
+        # initial_nodes = random.choices(range(self.max_hidden_dim), k=random.randint(
+        initial_nodes = random.sample(range(self.max_hidden_dim), k=random.randint(
             self.min_hidden_dim, self.max_hidden_dim))
+        self.node_existence[:] = 0
         self.node_existence[initial_nodes] = 1
         self.node_existence[-self.output_dim:] = 1
         for i in range(self.num_middle_result_nodes):
             fan_in = i+self.input_dim
             v_squared = 1/(fan_in*(0.25**2)*(1+0.5**2))
             torch.nn.init.normal_(self.weight[:, i], 0, math.sqrt(v_squared))
+        torch.nn.init.constant_(self.bias, 0)
 
         # torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         # if self.bias is not None:
@@ -265,9 +268,22 @@ class Individual(nn.Module):
         self.previous_train_success = initial_val_fitness < final_fitness
         return self.previous_train_success, np.array(optimizer.best_y_history)
 
-    def delete_node(self, max_mutated_hidden_nodes=2):
+    def delete_node(self, max_mutated_hidden_nodes:int=2)->int:
+        """删除q个隐层节点， 其中q服从[1, min(max_mutated_hidden_nodes, self.hidden_nodes())]的均匀分布。
+        Args:
+            max_mutated_hidden_nodes (int, optional): _description_. Defaults to 2.
+        Returns:
+            int: 成功删除的节点数量。如果没有已经没有节点可以被删除，返回0。
+        """
         self.epoches_since_structured = 0 # 修改了网络结构，所以数据归零
-        pass
+        hidden_nodes = self.hidden_nodes()
+        if hidden_nodes==0:
+            return 0
+        q = random.randint(1, min(max_mutated_hidden_nodes, hidden_nodes))
+        nodes = list(self.node_existence[:-self.output_dim].nonzero())
+        deletes = random.sample(nodes, q) # sample 和 chooses区别：不会重复，一定要删除那么多节点。
+        self.node_existence[deletes] = 0
+        return q
 
     def delete_connection(self, max_mutated_connections=3):
         self.epoches_since_structured = 0
@@ -284,10 +300,10 @@ class Individual(nn.Module):
 
     # 一些指标
     def hidden_nodes(self):
-        return self.node_existence[:-self.output_dim].sum().item()
+        return int(self.node_existence[:-self.output_dim].sum().item())
 
     def connections(self):
-        return self.connectivity.triu(diagonal=-self.input_dim+1).sum().item()
+        return int(self.connectivity.triu(diagonal=-self.input_dim+1).sum().item())
 
     def metrics(self):
         return dict(
