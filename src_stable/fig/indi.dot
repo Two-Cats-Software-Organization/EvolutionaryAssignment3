@@ -1,0 +1,18 @@
+strict digraph  {
+0 [color=blue, label=x0];
+1 [color=blue, label=x1];
+2 [bias="0.0", color=yellow, label=z0];
+3 [bias="0.0", color=yellow, label=z1];
+5 [bias="0.0", color=green, label=y0];
+6 [bias="0.0", color=green, label=y1];
+0 -> 2  [weight="2.3085408210754395"];
+0 -> 3  [weight="1.4650938510894775"];
+0 -> 5  [weight="-0.4646283686161041"];
+0 -> 6  [weight="3.1828784942626953"];
+1 -> 5  [weight="-3.118049144744873"];
+1 -> 6  [weight="2.6702349185943604"];
+2 -> 3  [weight="1.5466747283935547"];
+2 -> 6  [weight="-0.6217336654663086"];
+3 -> 6  [weight="-0.9584930539131165"];
+5 -> 6  [weight="0.1353924423456192"];
+}

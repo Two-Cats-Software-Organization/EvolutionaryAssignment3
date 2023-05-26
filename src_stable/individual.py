@@ -13,10 +13,10 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch
 import numpy as np
-import sklearn.metrics as metrics
+import networkx as nx
 from sklearnex import patch_sklearn
 patch_sklearn()
-
+import sklearn.metrics as metrics
 
 class Individual(nn.Module):
     """Some Information about Individual"""
@@ -55,6 +55,33 @@ class Individual(nn.Module):
         # 激活函数
         self.activation = nn.Sigmoid()
         self.reset_parameters(connection_density)
+        
+    def to_networkx(self):
+        G = nx.DiGraph()
+        # nodes. 统一使用j索引；命名时按照节点的类型，重新计数，称为k索引
+        nodes = [(j, {"color":"blue", "label":f"x{j}"}) for j in range(self.input_dim)]
+        k = 0
+        for i in list(self.node_existence[:-self.output_dim].nonzero()):
+            j = i.item()+self.input_dim
+            nodes.append((j, {"color":"yellow", "label":f"z{k}", "bias":str(self.bias[i].item())}))
+            k+=1
+        for k in range(self.output_dim):
+            i = self.max_hidden_dim+k
+            j = self.input_dim+i
+            nodes.append((j, {"color":"green", "label":f"y{k}", "bias":str(self.bias[i].item())}))
+        G.add_nodes_from(nodes)
+        # edges. 基于j索引，寻找有效连接，把weight绑上去。
+        edges = []
+        for i in range(self.connectivity.shape[1]):
+            for j in range(self.connectivity.shape[0]):
+                if j>=i+self.input_dim: 
+                    break
+                if self.connectivity[j][i] and self.node_existence[i]:
+                    if j>=self.input_dim and self.node_existence[j-self.input_dim]==False:
+                        continue
+                    edges.append((j, i+self.input_dim, self.weight[j, i].item()))
+        G.add_weighted_edges_from(edges)
+        return G
 
     def reset_parameters(self, connection_density=0.75) -> None:
         self.connectivity = nn.Parameter(torch.nn.init.uniform_(torch.zeros_like(self.connectivity)

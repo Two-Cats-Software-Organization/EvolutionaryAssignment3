@@ -47,7 +47,7 @@ class EPNet:
         return False
     # def run(self, train_loader, test_loader):
     def run(self, epochs=100,):
-        bar = tqdm.tqdm(range(epochs), desc="EPNet", position=0, leave=True)
+        bar = tqdm.tqdm(range(epochs), desc="EPNet", position=0, leave=False, colour='green')
         for i in bar:
             # best_individual = max(
             #     self.population, key=lambda i: i.current_fitness)
