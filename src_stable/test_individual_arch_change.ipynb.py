@@ -25,3 +25,6 @@ list(indi.parameters())
 indi.reset_parameters()
 list(indi.parameters())
 # %%
+success = indi.delete_node(2)
+list(indi.parameters()), success
+# %%

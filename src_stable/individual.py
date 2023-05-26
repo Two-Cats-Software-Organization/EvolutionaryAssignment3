@@ -280,7 +280,7 @@ class Individual(nn.Module):
         if hidden_nodes==0:
             return 0
         q = random.randint(1, min(max_mutated_hidden_nodes, hidden_nodes))
-        nodes = list(self.node_existence[:-self.output_dim].nonzero())
+        nodes = [i.item() for i in self.node_existence[:-self.output_dim].nonzero()]
         deletes = random.sample(nodes, q) # sample 和 chooses区别：不会重复，一定要删除那么多节点。
         self.node_existence[deletes] = 0
         return q
