@@ -1,18 +1,20 @@
 strict digraph  {
-0 [color=blue, label=x0];
-1 [color=blue, label=x1];
-2 [bias="0.0", color=yellow, label=z0];
-3 [bias="0.0", color=yellow, label=z1];
-5 [bias="0.0", color=green, label=y0];
-6 [bias="0.0", color=green, label=y1];
-0 -> 2  [weight="2.3085408210754395"];
-0 -> 3  [weight="1.4650938510894775"];
-0 -> 5  [weight="-0.4646283686161041"];
-0 -> 6  [weight="3.1828784942626953"];
-1 -> 5  [weight="-3.118049144744873"];
-1 -> 6  [weight="2.6702349185943604"];
-2 -> 3  [weight="1.5466747283935547"];
-2 -> 6  [weight="-0.6217336654663086"];
-3 -> 6  [weight="-0.9584930539131165"];
-5 -> 6  [weight="0.1353924423456192"];
+"-1" [color="#2ecc71", fontcolor="#2ecc71", label=1, shape=circle, style=bold];
+0 [color="#2ecc71", fontcolor="#2ecc71", label=x0, shape=circle, style=wedged];
+1 [color="#2ecc71", fontcolor="#2ecc71", label=x1, shape=circle, style=wedged];
+2 [bias="0.0", color="#3498db", fontcolor="#3498db", label=z0, shape=circle, style=wedged];
+4 [bias="0.0", color="#3498db", fontcolor="#3498db", label=z1, shape=circle, style=wedged];
+5 [bias="0.0", color="#e74c3c", fontcolor="#e74c3c", label=y0, shape=circle, style=wedged];
+6 [bias="0.0", color="#e74c3c", fontcolor="#e74c3c", label=y1, shape=circle, style=wedged];
+"-1" -> 2  [bias="0.0", fontcolor=steelblue, label="0.00"];
+"-1" -> 4  [bias="0.0", fontcolor=steelblue, label="0.00"];
+"-1" -> 5  [bias="0.0", fontcolor=goldenrod, label="0.00"];
+"-1" -> 6  [bias="0.0", fontcolor=goldenrod, label="0.00"];
+0 -> 5  [fontcolor=goldenrod, label="0.64", weight="0.6430624723434448"];
+1 -> 2  [fontcolor=steelblue, label="-0.02", weight="-0.02343861013650894"];
+1 -> 4  [fontcolor=steelblue, label="1.45", weight="1.4481706619262695"];
+2 -> 5  [fontcolor=goldenrod, label="-3.00", weight="-3.0010249614715576"];
+2 -> 6  [fontcolor=goldenrod, label="1.52", weight="1.5225626230239868"];
+4 -> 5  [fontcolor=goldenrod, label="-1.17", weight="-1.1684983968734741"];
+4 -> 6  [fontcolor=goldenrod, label="-0.95", weight="-0.9476726055145264"];
 }

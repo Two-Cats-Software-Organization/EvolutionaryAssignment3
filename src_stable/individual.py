@@ -59,19 +59,26 @@ class Individual(nn.Module):
     def to_networkx(self):
         G = nx.DiGraph()
         # nodes. 统一使用j索引；命名时按照节点的类型，重新计数，称为k索引
-        nodes = [(j, {"color":"blue", "label":f"x{j}"}) for j in range(self.input_dim)]
+        G.add_node(-1, label="1", color="#2ecc71", fontcolor="#2ecc71", 
+                   shape="circle", style="bold") # bias
+        nodes = [(j, {"color":"#2ecc71", "style":"wedged", "fontcolor":"#2ecc71", "shape":"circle", 
+                               "label":f"x{j}"}) for j in range(self.input_dim)]
         k = 0
         for i in list(self.node_existence[:-self.output_dim].nonzero()):
             j = i.item()+self.input_dim
-            nodes.append((j, {"color":"yellow", "label":f"z{k}", "bias":str(self.bias[i].item())}))
+            nodes.append((j, {"shape":"circle", "style":"wedged",
+                       "color":"#3498db", "fontcolor":"#3498db", 
+                        "label":f"z{k}", "bias":str(self.bias[i].item())}))
             k+=1
         for k in range(self.output_dim):
             i = self.max_hidden_dim+k
             j = self.input_dim+i
-            nodes.append((j, {"color":"green", "label":f"y{k}", "bias":str(self.bias[i].item())}))
+            nodes.append((j, {"shape":"circle", "style":"wedged",
+                   "color":"#e74c3c", "fontcolor":"#e74c3c", 
+                              "label":f"y{k}", "bias":str(self.bias[i].item())}))
         G.add_nodes_from(nodes)
         # edges. 基于j索引，寻找有效连接，把weight绑上去。
-        edges = []
+        # edges = []
         for i in range(self.connectivity.shape[1]):
             for j in range(self.connectivity.shape[0]):
                 if j>=i+self.input_dim: 
@@ -79,8 +86,26 @@ class Individual(nn.Module):
                 if self.connectivity[j][i] and self.node_existence[i]:
                     if j>=self.input_dim and self.node_existence[j-self.input_dim]==False:
                         continue
-                    edges.append((j, i+self.input_dim, self.weight[j, i].item()))
-        G.add_weighted_edges_from(edges)
+                    # edges.append((j, i+self.input_dim, self.weight[j, i].item()))
+                    weight = self.weight[j, i].item()
+                    G.add_edge(j, i+self.input_dim, 
+                               weight=weight,
+                               label = f"{weight:.2f}",
+                               fontcolor="steelblue" if i<self.max_hidden_dim else "goldenrod"
+                               )
+        # bias
+        
+        for i in list(self.node_existence.nonzero()):
+            i = i.item()
+            j = i+self.input_dim
+            bias = self.bias[i].item()  
+            G.add_edge(-1, j, 
+                       bias=bias,
+                       label=f"{bias:.2f}",
+                       fontcolor="steelblue" if i<self.max_hidden_dim else "goldenrod"
+                       )
+            
+        # G.add_weighted_edges_from(edges)
         return G
 
     def reset_parameters(self, connection_density=0.75) -> None:
