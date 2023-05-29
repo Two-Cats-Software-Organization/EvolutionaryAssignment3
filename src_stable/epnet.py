@@ -6,6 +6,10 @@ from losses import prechelt_mse_loss
 import tqdm
 from copy import deepcopy
 from utils import rank_selection
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
 class EPNet:
     def __init__(self, X_train, X_val, y_train, y_val,
@@ -14,7 +18,7 @@ class EPNet:
                  max_mutated_hidden_nodes=2,
                  max_mutated_connections=3,
                  population_size=20, start_epochs=100, training_epochs=100
-                 ,criterion=prechelt_mse_loss) -> None:
+                 ,criterion=prechelt_mse_loss, lr=0.01) -> None:
         # 数据集
         self.X_train = X_train
         self.X_val = X_val
@@ -26,6 +30,7 @@ class EPNet:
         self.max_mutated_connections = max_mutated_connections
         self.criterion = criterion
         self.start_epochs = start_epochs
+        self.lr = lr
         # 统计指标
         self.situation_names = ['bp', 'sa', 'delete_node', 'delete_connection', 'add_node', 'add_connection']
         self.situation_counts = [0 for _ in range(len(self.situation_names))]
@@ -66,6 +71,7 @@ class EPNet:
             epochs = self.training_epochs
         individual.fit_bp(self.X_train, self.y_train, self.X_val, self.y_val,
                             epochs=epochs, criterion=self.criterion, 
+                            optimizer = optim.Adam(individual.parameters(), lr=self.lr), 
                               position=1, leave=False)
     # def run(self, train_loader, test_loader):
     def run(self, epochs=100,):

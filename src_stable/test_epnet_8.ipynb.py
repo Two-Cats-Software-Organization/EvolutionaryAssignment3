@@ -6,7 +6,7 @@ import torch.optim as optim
 from datasets import NParity
 from utils import dataset2numpy, numpy2gpu
 from sklearn.model_selection import train_test_split
-N = 4
+N = 8
 dataset = NParity(N) # XOR 问题
 X, Y = dataset2numpy(dataset)
 # X_train, X_val, y_train, y_val = train_test_split(X, Y, test_size=0.2)
@@ -16,7 +16,7 @@ X_train, X_val, y_train, y_val = numpy2gpu(X_train, X_val, y_train, y_val)
 from epnet import EPNet
 net = EPNet(X_train, X_val, y_train, y_val,
             input_dim=N, output_dim=1, max_hidden_dim=N,
-            criterion=F.binary_cross_entropy, lr=0.1
+            criterion=F.binary_cross_entropy, lr=0.2
             ,population_size=20)
 #%%
 net.reset_parameters()
@@ -31,10 +31,10 @@ df.head()
 df.describe()
 #%%
 best_individual = max(
-            net.population, key=lambda i: i.hidden_nodes()*i.current_fitness)
+            # net.population, key=lambda i: i.hidden_nodes()*i.current_fitness)
             # net.population, key=lambda i: i.hidden_nodes())
-            # net.population, key=lambda i: i.current_fitness)
-
+            net.population, key=lambda i: i.current_fitness)
+best_individual.current_fitness
 #%%
 from sklearn import metrics
 best_individual.fitness_sklearn(X_train, y_train, metrics.accuracy_score, False)

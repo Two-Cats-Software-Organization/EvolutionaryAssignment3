@@ -48,7 +48,17 @@ indi.fit_bp(X_train, y_train, X_val, y_val, epochs=100)
 #%%
 indi.connections()
 # %%
-indi.connection_importance(X_val, y_val)
+from losses import prechelt_mse_loss
+# indi.connection_importance(X_val, y_val, prechelt_mse_loss)
+# indi.connection_importance(X_val, y_val, F.mse_loss)
+# indi.connection_importance(X_val, y_val, F.binary_cross_entropy)
+importance = indi.connection_importance_prob(X_val, y_val, prechelt_mse_loss)
+importance
+#%%
+(importance/importance.sum()).sum()
+(importance/importance.sum()).sum()
+(1-importance).sum()
+# 1-importance
 #%%
 indi.delete_connection(X_val, y_val)
 

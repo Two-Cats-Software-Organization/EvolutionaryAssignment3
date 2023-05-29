@@ -309,6 +309,16 @@ class Individual(nn.Module):
         importance = torch.unsqueeze(effective_weights, 0)+grads
         importance = torch.mean(importance, dim=0)/torch.std(importance, dim=0)/math.sqrt(len(y_pred))
         return importance
+    
+    def connection_importance_prob(self, X:torch.Tensor, y:torch.Tensor, criterion:Callable=F.binary_cross_entropy)->torch.Tensor:
+        importance = self.connection_importance(X, y, criterion)
+        max_importance = torch.max(torch.abs(torch.nan_to_num(importance, nan=0, posinf=0, neginf=0))).item()
+        print(max_importance)
+        importance = torch.nan_to_num(importance, nan=1000*max_importance, 
+                                      posinf=1000*max_importance, neginf=-1000*max_importance).reshape(-1)
+        importance = torch.sigmoid(-importance)
+        importance = importance/torch.sum(importance)
+        return importance
         
     def delete_connection(self, X:torch.Tensor, y:torch.Tensor, criterion:Callable=F.binary_cross_entropy, 
                            max_mutated_connections=3):
@@ -317,9 +327,7 @@ class Individual(nn.Module):
         if connections<=0:
             return 0
         q = random.randint(1, min(max_mutated_connections, connections))
-        importance = 1/self.connection_importance(X, y, criterion)
-        importance = torch.nan_to_num(importance, nan=0, posinf=10, neginf=-10).reshape(-1)
-        importance = importance/torch.sum(importance)
+        importance = self.connection_importance_prob(X, y, criterion)
         if torch.isnan(importance).sum()!=0: return 0
         importance = [i.item() for i in importance]
         deletes = random.choices(range(len(importance)), weights=importance, k=q)

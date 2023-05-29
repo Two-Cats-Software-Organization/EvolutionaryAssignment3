@@ -1,0 +1,37 @@
+strict digraph  {
+"-1" [color="#2ecc71", fontcolor="#2ecc71", label=1, shape=circle, style=bold];
+0 [color="#2ecc71", fontcolor="#2ecc71", label=x0, shape=circle, style=wedged];
+1 [color="#2ecc71", fontcolor="#2ecc71", label=x1, shape=circle, style=wedged];
+2 [color="#2ecc71", fontcolor="#2ecc71", label=x2, shape=circle, style=wedged];
+3 [color="#2ecc71", fontcolor="#2ecc71", label=x3, shape=circle, style=wedged];
+4 [color="#2ecc71", fontcolor="#2ecc71", label=x4, shape=circle, style=wedged];
+5 [color="#2ecc71", fontcolor="#2ecc71", label=x5, shape=circle, style=wedged];
+6 [color="#2ecc71", fontcolor="#2ecc71", label=x6, shape=circle, style=wedged];
+7 [color="#2ecc71", fontcolor="#2ecc71", label=x7, shape=circle, style=wedged];
+9 [bias="1.2114750146865845", color="#3498db", fontcolor="#3498db", label=z0, shape=circle, style=wedged];
+11 [bias="-15.154332160949707", color="#3498db", fontcolor="#3498db", label=z1, shape=circle, style=wedged];
+16 [bias="0.021124286577105522", color="#e74c3c", fontcolor="#e74c3c", label=y0, shape=circle, style=wedged];
+"-1" -> 9  [bias="1.2114750146865845", fontcolor=steelblue, label="1.21"];
+"-1" -> 11  [bias="-15.154332160949707", fontcolor=steelblue, label="-15.15"];
+"-1" -> 16  [bias="0.021124286577105522", fontcolor=goldenrod, label="0.02"];
+0 -> 9  [fontcolor=steelblue, label="-12.81", weight="-12.81363296508789"];
+0 -> 11  [fontcolor=steelblue, label="1.20", weight="1.1966742277145386"];
+0 -> 16  [fontcolor=goldenrod, label="0.00", weight="7.947318954393268e-05"];
+1 -> 9  [fontcolor=steelblue, label="-10.27", weight="-10.271294593811035"];
+1 -> 11  [fontcolor=steelblue, label="-3.24", weight="-3.2370657920837402"];
+1 -> 16  [fontcolor=goldenrod, label="0.00", weight="7.145979907363653e-05"];
+2 -> 9  [fontcolor=steelblue, label="-10.39", weight="-10.388412475585938"];
+2 -> 11  [fontcolor=steelblue, label="-2.95", weight="-2.945154905319214"];
+2 -> 16  [fontcolor=goldenrod, label="0.00", weight="7.217051461338997e-05"];
+3 -> 11  [fontcolor=steelblue, label="-21.73", weight="-21.72686195373535"];
+3 -> 16  [fontcolor=goldenrod, label="-0.02", weight="-0.021000592038035393"];
+4 -> 9  [fontcolor=steelblue, label="-11.35", weight="-11.349137306213379"];
+4 -> 16  [fontcolor=goldenrod, label="0.00", weight="7.70420883782208e-05"];
+5 -> 9  [fontcolor=steelblue, label="-12.14", weight="-12.139193534851074"];
+6 -> 11  [fontcolor=steelblue, label="-21.71", weight="-21.710704803466797"];
+6 -> 16  [fontcolor=goldenrod, label="-0.02", weight="-0.021000584587454796"];
+7 -> 9  [fontcolor=steelblue, label="-12.97", weight="-12.969832420349121"];
+9 -> 11  [fontcolor=steelblue, label="23.54", weight="23.538419723510742"];
+9 -> 16  [fontcolor=goldenrod, label="0.91", weight="0.9074529409408569"];
+11 -> 16  [fontcolor=goldenrod, label="-16.40", weight="-16.399782180786133"];
+}
