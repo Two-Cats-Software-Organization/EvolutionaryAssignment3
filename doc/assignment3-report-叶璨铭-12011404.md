@@ -1,4 +1,4 @@
-# EPNet如何工作？基于统计的EPNet性能分析及改进思路
+# EPNet如何工作？EPNet复现报告与改进方法研究
 
  <div align="center">
     叶璨铭, 12011404 <br>
@@ -174,9 +174,9 @@ Yao&Liu在论文[^1]中III. EPNET对EPNet权重初始化的描述是“The rando
 
 既然EPNet并没有一个明确的思路和理论来解释ANN权重的初始化，**我们有必要学习现代神经网络的权重初始化理论，将其引入到EPNet中**。
 
-如果ANN的权重使用均值为零，方差为$v^2$的高斯分布初始化，$v^2$的最优取值是多少？这是ANN权重初始化研究领域的基本问题。[^11] Glorot and Bengio的理论研究表明，如果激活函数为线性函数(y=x, 也就是不使用激活函数)，**最优初始化是$v^2=\frac{1}{N}$**，其中N是输入到这个神经元的输入数量。这种方法又称为Xavier Initialization。
+如果ANN的权重使用均值为零，方差为$v^2$的高斯分布$N(0, v^2)$初始化，$v^2$的最优取值是多少？这是ANN权重初始化研究领域的基本问题。[^11] Glorot and Bengio的理论研究表明，如果激活函数为线性函数(y=x, 也就是不使用激活函数)，**最优初始化是 ** $v^2=\frac{1}{N}$，其中N是输入到这个神经元的输入数量。这种方法又称为Xavier Initialization[^20]。
 
-He等人进一步实验研究发现，Xavier Initialization对于ReLU、Leaky ReLU等激活函数并不好用，于是针对这类激活函数提出He Initialization。而Kumar随后提出一个理论框架证实了He Initialization的有效性。
+He等人进一步实验研究发现，Xavier Initialization对于ReLU、Leaky ReLU等激活函数并不好用，于是针对这类激活函数提出He Initialization。而Kumar随后提出一个理论框架证实了He Initialization的有效性[^11]。
 
 对于EPNet，我们使用的是Sigmoid激活函数。根据Kumar的理论，**针对Sigmoid激活函数的最优v值符合公式$v^2 = \frac{1}{N\times(g^{'^2}(0)\times (1+g^2(0)))}$，其中g是Sigmoid函数，而N是神经元的输入数量**。对于Sigmoid，$g(0)=0.5, g{'}(0)=0.25$。
 
@@ -263,7 +263,9 @@ EPNet试图提出MBP算法，然而EPNet论文对于MBP算法的具体操作只�
 
 EPNet论文中并没有对这些关键的问题进行解答，在实验设置中EPNet只给出了SA的初始温度和每一个温度的迭代次数，但是并没有告诉我们温度如何下降，最低的温度是多少。这个问题并不是最重要的。更重要的是，解的随机邻居是什么？
 
-当然，最简单就是解加上一个高斯变异，或者柯西变异，而步长作为超参数进行一定的设置。
+事实上，模拟退火算法是一类算法，存在多个流派的研究工作。Guo总结目前受欢迎的模拟退火算法主要有三种——Fast SA、Cauthy SA、Boltzmann SA[^18]。这些算法不仅回答了解的邻居是什么，而且回答了温度如何变化。而对于算法是否接受差解，这些SA都遵循metropolis准则[^15][^19]，没有区别。我们注意到Fast SA也需要初始温度和每一个温度的迭代次数，和EPNet论文中的给出的参数意义一致，所以我们采用Fast SA。
+
+#### 我们真的需要SA和MBP吗？
 
 不过我们仔细想一想MBP和SA的区别在什么地方。SA的移动速度由步长决定，而MBP的移动速度由学习率和梯度的大小决定。SA在移动不下降时以一定概率接受移动；MBP必须接受移动，但是可能由于学习率太大导致loss上升。
 
@@ -280,28 +282,140 @@ EPNet论文中并没有对这些关键的问题进行解答，在实验设置中
 
 我们对EPNet同时实现了SA版本和基于梯度的SA学习率规划算法，在实验部分进行比较。
 
-## Related Work (已有文献对 EPNet 或类似方法性能的分析)
+### 6. *Hidden Node Deletion* 与*Connection Deletion*: 
 
-## Preliminary Experiment (通过统计实验分析EPNet工作原理)
+针对ANN的网络结构变异，EPNet首先设计了*hidden node deletion*和*connection deletion*。EPNet认为deletion操作应当在addition操作之前，如果deletion操作成功了，则不需要做addition操作，通过这种方式EPNet鼓励正则性(parsimony)[^1]。
 
+#### *Hidden Node Deletion* 实现细节
 
+关于具体实现，EPNet首先采样 $q\sim U[1, Q]$, 然后随机在parent网络删除q个节点。然而，parent网络可能此时的结构中并没有q个节点，**这种情况下，EPNet的删除策略是无法实现的**。
 
-### Method (我们的改进思路)
+一种简单的修复是让 $q = min(q, \#hidden\_nodes(parent))$；另一种简单的修复是$q\sim U[1, min(Q, \#hidden\_nodes(parent))]$。这两种修复方式都是合理的。然而，当网络只剩下一个隐藏层节点时，这个节点必定被删除，Zhang在代码复现中不希望发生这种情况，因此其代码除了采用了这种修复方式之外，还确保了$q = \#hidden\_nodes(parent)=1$时结构不发生变化，直接返回结构突变失败[^3]。
 
+我们认为Zhang的复现没有相应的依据，实际上没有隐藏层的ANN可能是更加简洁、适应于数据集的，不应该排除为非法网络。EPNet在III.部分就提到，相比前人工作，EPNEt的一个重要的改进点就在于没有对神经网络可能的结构做过多的限制，因此具有良好的扩展性[^1]。于是我们复现EPNet**采用了第二种简单修复**。
 
+#### *Connection Deletion* 实现细节
 
+类似于*Hidden Node Deletion*，EPNet首先采样q，然后选择q个连接进行删除。我们再次对q的采用过程应用修复2，让均匀分布的最大值不能超过parent当前的连接数量。
 
+q采样完成之后，一种简单的删除思路是直接均匀地在所有可删除连接中选择q个。不过，EPNet并不是这么做的[^1]。如果把神经网络看做是一个集成学习的模型，每个神经元集成了前面神经元的输出，那么神经元之间的连接的重要性，表征的是前面神经元作为一个模型的重要性；如果把删除连接视作一个模型压缩的过程，可以看做是在集成的所有模型中选择一个最满意的模型，转换为模型选择(model selection)问题。
+
+Finnoff等人在1992年提出了一种“Nonconvergent Method”用于ANN的模型选择问题，即结构变化在训练过程结束之前发生的模型选择方法[^22]。如果ANN通过BP已经收敛到可能的最优值，那么对ANN的评价反映的是对ANN结构的评价，在此基础上的剪枝或者模型选择都有统计学的理论支撑。然而EPNet是在演化过程中同时改进结构和权重，因此需要使用另外一类称为Stopped Training[^22]的算法。Finnoff总结了三种基本的方法，第一种是直接根据weight的大小作为重要性指标，这种方法假设不重要的weight会被BP算法训练后接近于0; 第二种方法是二阶导数，但是根据Finnoff的证明，这种方法意义不大；第三种方法是EPNet采用的“deviation from zero”方法。
+
+### 7. *Hidden Node Addition* 与*Connection Addition*: 
+
+#### *Hidden Node Addition* 实现细节
+
+Odri指出ANN训练失败的原因在于隐藏层节点数量不够多，因此神经网络架构演化中的隐藏层节点增加是有意义的。Odri进一步提出了cell division法则，要求cell（神经元/节点）在增多后子代的神经网络行为不发生变化[^21]。Yao&Liu采用了Odri建议的cell division，并且强调这种方法可以减少generation gap，以便让其演化过程是拉马克式的[^1]。
+
+具体而言，首先随机选择q个存在的节点，然后让每一个节点分裂为两个节点。新的两个节点的weight是和原本节点的weight有关系的，关系如下[^1]：
+
+<img src="assignment3-report-叶璨铭-12011404.assets/image-20230526182854750.png" alt="image-20230526182854750" style="zoom:33%;"/>
+
+这个公式的实际含义如下
+
+1. 第一个公式描述的是新节点与输入节点连接的权重，两个节点与父节点保持一致。
+2. 第二、三两个公式描述新节点与输出节点连接的权重，两个节点有所不同，但是加起来是1，因此其输出对后续节点计算的影响和父节点一样。
+
+根据代码实现的不同，新的两个节点可以放在不同的位置。类似于*Hidden Node Deletion*，我们同样注意到节点的增加不应当使得节点超过max_hidden_dims。因此，我们也首先通过上文提到的修复2采样一个q：
+
+```python
+q = random.randint(1, min(max_mutated_hidden_nodes, len(available_new_nodes)))
+```
+
+然后对于新节点的分配：
+
+- 第一个新节点直接代替父节点。
+- **第二个新节点按照一定策略替代当前不存在的一个节点。**
+
+注意第二步中，新节点的分配策略对结果有一定的影响，而EPNet忽略了这个问题。在Ordi尝试演化的神经网络结构中，隐藏节点之间是对称的，无论如何添加都不会影响效果；**而EPNet中，不可能将第二个新节点安排到一个和父节点在现在或未来等价的位置**。这个新节点必然要不在父节点之前，要不在父节点之后，其权重连接也不能保持完全和父节点一致，神经网络的行为会发生微小的改变。
+
+针对这个问题，本文提出两个策略
+
+1. 只允许放置到父节点相邻的空位置，此时由于中间没有其他节点的干扰，可以保持等价。若父节点前后都有节点存在，则算法不能选中该节点为父节点。
+
+   如图，蓝色和黄色圆圈为神经元，黄色圆圈是父节点，绿色方框为目前不存在的神经元放置位置。在图示情况下，新的神经元可以放置在任何绿色位置。
+
+   ![image-20230526200913830](assignment3-report-叶璨铭-12011404.assets/image-20230526200913830.png)
+
+   采用策略1明显会降低可添加的节点数量，因为算法很容易提前终止。为此，我们提出策略2
+
+2. 允许选择周围无相邻空位置的节点，但是选择完成之后将相邻的已存在节点向左或者向右移动来腾开位置。可以归纳证明，对于任意的节点，只要还存在空位置，总能够将其他节点向右或向左移动，使得腾出位置让给新的隐藏节点。
+
+   如图，要为黄色的神经元执行等价的cell division，需要将蓝色节点向右或向左移动一格
+
+![image-20230526200942337](assignment3-report-叶璨铭-12011404.assets/image-20230526200942337.png)
+
+Zhang的代码复现中并没有实现上述的策略，而是直接不管parent节点右边是否存在节点，将parent+1的节点覆盖为子节点[^3]。这种实现违背了EPNet最小代际变化的设计原则。
+
+**我们通过巧妙的设计，实现了策略2，保持了EPNet的特性。**我们以空节点的视角看待问题，具体算法如下：
+
+1. 随机选择空节点集合S。
+2. 按照编号从小到大遍历集合S的每一个元素s，不妨设s的编号为i。
+   1. 若i左边存在节点，则朝向设置为“左”，否则朝向设置为“右”。
+   2. 以i朝向方向的第一个存在节点为父节点分裂节点。
+
+我们的算法的巧妙之处在于**空节点的左右必定存在最近非空节点**（当没有隐藏层节点时，输出神经元也可以作为分裂的父节点），而**空节点不受周围的空节点的影响。**
+
+被选中的节点有可能是已经被其他选过的节点，也有可能是前面刚刚生成的空节点。这是不可避免的，因为空节点的数量很有可能就是比存在节点数量多。尽管多次基于同一个节点生成新节点，我们的做法保证了神经网络行为不变的前提下Mutation可以有更大的步长。
 
 ## Experiment
 
 ### Experiment Setup
 
 - 数据集
-  - 论文中，Yao&Liu 在 “*The Parity Problems*”， “”
+  - 论文中，Yao&Liu 选择了 “*The Parity Problems*”和“*Medical Diagnosis Problems*”两大类问题进行了实现。
+  - 其中“*The Parity Problems*”探究了N=4, 5, 6, 7, 8的情况。
+  - 我们使用“*The Parity Problems*”来进行研究
+- 参数设置
+  - EP算法有关的参数
+    - 种群大小 = 20
+    - 演化代数 = 80/20/100/10
 
-### 
+  - ANN初始生成参数
+    - 隐藏节点大小[2, N]
+    - 初始连接密度=0.75
+
+  - ANN结构变化参数
+    - 隐藏节点变化范围 [1,2]
+    - 连接变化范围 [1-3]
+
+  - 梯度优化设置
+    - 优化器：Adam
+    - 损失函数：prechet_mse_loss / bce_loss
+    - 学习率=0.1/0.5/0.01
+    - 轮数 = 100
+
+  - 退火优化设置
+    - 初始温度 = 5
+    - 每个温度的迭代轮数 = 100
 
 
+
+
+### 最优神经网络结构
+
+- Parity-4
+
+  ![indi-4.dot](assignment3-report-叶璨铭-12011404.assets/indi-4.dot.svg)
+
+- Parity-8
+
+![indi-8.dot](assignment3-report-叶璨铭-12011404.assets/indi-8.dot-1685115464578-6.svg)
+
+### 指标
+
+- Parity-4
+
+  ![image-20230526234417731](assignment3-report-叶璨铭-12011404.assets/image-20230526234417731.png)
+
+- Parity-8
+
+  ![image-20230526235322343](assignment3-report-叶璨铭-12011404.assets/image-20230526235322343.png)
+
+### 分支频率统计
+
+![epnet_metrics-8](assignment3-report-叶璨铭-12011404.assets/epnet_metrics-8.png)
 
 # References
 
@@ -322,4 +436,11 @@ EPNet论文中并没有对这些关键的问题进行解答，在实验设置中
 [^15]: RUSSELL Stuartj, PETERNORVIG, 诺维格, 等. 人工智能:一种现代的方法[J/OL]. 清华大学出版社, 2013[2022-07-10]. https://xueshu.baidu.com/usercenter/paper/show?paperid=3ea17f427b46d814759922e4ec067e71&site=xueshu_se&hitarticle=1. DOI:[9787302331094](https://doi.org/9787302331094).
 [^16]: KINGMA D P, BA J. Adam: A Method for Stochastic Optimization[M/OL]. arXiv, 2017[2023-05-26]. http://arxiv.org/abs/1412.6980. DOI:[10.48550/arXiv.1412.6980](https://doi.org/10.48550/arXiv.1412.6980).
 [^17]: RUDER S. An overview of gradient descent optimization algorithms[M/OL]. arXiv, 2017[2023-05-26]. http://arxiv.org/abs/1609.04747. DOI:[10.48550/arXiv.1609.04747](https://doi.org/10.48550/arXiv.1609.04747).
+
+[^18]: 更多模拟退火算法[EB/OL]. [2023-05-26]. https://scikit-opt.github.io/scikit-opt/#/zh/more_sa?id=_3-types-of-simulated-annealing.
+[^19]: 郭飞. scikit-opt[CP/OL]. (2023-05-26)[2023-05-26]. https://github.com/guofei9987/scikit-opt.
+[^20]: GLOROT X, BENGIO Y. Understanding the difficulty of training deep feedforward neural networks[C/OL]//Proceedings of the Thirteenth International Conference on Artificial Intelligence and Statistics. JMLR Workshop and Conference Proceedings, 2010: 249-256[2023-05-26]. https://proceedings.mlr.press/v9/glorot10a.html.
+
+[^21]: ODRI S V, PETROVACKI D P, KRSTONOSIC G A. Evolutional development of a multilevel neural network[J/OL]. Neural Networks, 1993, 6(4): 583-595. DOI:[10.1016/S0893-6080(05)80061-9](https://doi.org/10.1016/S0893-6080(05)80061-9).
+[^22]: FINNOFF W, HERGERT F, ZIMMERMANN H G. Improving model selection by nonconvergent methods[J/OL]. Neural Networks, 1993, 6(6): 771-783. DOI:[10.1016/S0893-6080(05)80122-4](https://doi.org/10.1016/S0893-6080(05)80122-4).
 
