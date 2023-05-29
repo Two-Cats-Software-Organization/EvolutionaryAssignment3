@@ -76,6 +76,7 @@ class EPNet:
     # def run(self, train_loader, test_loader):
     def run(self, epochs=100,):
         bar = tqdm.tqdm(range(epochs), desc="EPNet", position=0, leave=False, colour='green')
+        val_losses = []
         for i in bar:
             # best_individual = max(
             #     self.population, key=lambda i: i.current_fitness)
@@ -83,16 +84,18 @@ class EPNet:
             #     self.population, key=lambda i: i.current_fitness)
             self.population.sort(key=lambda i:i.current_fitness)
             worst_individual = self.population[0]
-            best_individual = self.population[
+            chosen_individual = self.population[
                 rank_selection(len(self.population), k=1)[0]] # 随机选择一个最好的
+            best_individual = self.population[-1]
             bar.set_postfix(best_fitness=best_individual.current_fitness)
+            val_losses.append(best_individual.current_fitness)
             # 1. Hybrid training mutation
-            if best_individual.previous_train_success:
-                self.fit_bp(best_individual)
+            if chosen_individual.previous_train_success:
+                self.fit_bp(chosen_individual)
                 self.situation_counts[0] += 1
                 continue  # 因为上一轮成功，不管这一轮是否成功，直接继续训练替代父代。这一轮的不成功是下一次在说。
             # 尝试SA跳出局部最优解
-            backup_best_individual = deepcopy(best_individual)
+            backup_best_individual = deepcopy(chosen_individual)
             if self.try_sa_or_rollback(worst_individual, backup_best_individual) : 
                 self.situation_counts[1] += 1
                 continue 
@@ -125,4 +128,4 @@ class EPNet:
                 self.situation_counts[4] += 1
             else:
                 self.situation_counts[5] += 1
-            
+        return val_losses
